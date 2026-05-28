@@ -31,6 +31,7 @@ interface Budget {
     status: 'draft' | 'sent' | 'approved' | 'rejected';
     public_token: string;
     sale_id: string | null;
+    created_by_name: string | null;
     environments: any[];
 }
 
@@ -200,7 +201,7 @@ export default function BudgetDetailPage() {
             avistaEntryPercent:    budget.avista_entry_percent,
             environments: activeEnvs,
             observations: budget.observations,
-            responsibleName: profile?.full_name || orgData.owner_name,
+            responsibleName: budget.created_by_name || profile?.full_name || orgData.owner_name,
         });
     };
 

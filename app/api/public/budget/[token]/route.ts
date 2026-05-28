@@ -9,7 +9,7 @@ export async function GET(req: Request, { params }: { params: { token: string } 
     try {
         const { data: budget, error } = await supabaseAdmin
             .from('budgets')
-            .select('id, organization_id, client_name, client_address, budget_number, payment_type, total_prazo, total_avista, prazo_entry_percent, prazo_installments, avista_discount_percent, avista_entry_percent, observations, status, created_at, updated_at')
+            .select('id, organization_id, created_by, client_name, client_address, budget_number, payment_type, total_prazo, total_avista, prazo_entry_percent, prazo_installments, avista_discount_percent, avista_entry_percent, observations, status, created_at, updated_at')
             .eq('public_token', params.token)
             .single();
 
@@ -23,6 +23,17 @@ export async function GET(req: Request, { params }: { params: { token: string } 
             .select('name, company_name, cnpj, phone, email, address, owner_name, logo_url, budget_validity_days')
             .eq('id', (budget as any).organization_id)
             .single();
+
+        // Nome do usuário que elaborou o orçamento (responsável)
+        let createdByName: string | null = null;
+        if ((budget as any).created_by) {
+            const { data: creator } = await supabaseAdmin
+                .from('profiles')
+                .select('full_name')
+                .eq('id', (budget as any).created_by)
+                .single();
+            createdByName = creator?.full_name || null;
+        }
 
         const { data: environments } = await supabaseAdmin
             .from('budget_environments')
@@ -39,6 +50,7 @@ export async function GET(req: Request, { params }: { params: { token: string } 
         return NextResponse.json({
             ...budget,
             org: org || null,
+            created_by_name: createdByName,
             environments: (environments || []).map(env => ({
                 ...env,
                 items: (items || []).filter(i => i.environment_id === env.id),

@@ -54,7 +54,20 @@ async function urlToBase64(url: string): Promise<string | null> {
     } catch { return null; }
 }
 
-export async function generateBudgetPDF(data: BudgetPDFData) {
+export interface GenerateBudgetPDFOptions {
+    /** "save" (padrão) baixa o arquivo; "blob" retorna o arquivo para compartilhar. */
+    output?: "save" | "blob";
+}
+
+export interface BudgetPDFResult {
+    blob: Blob;
+    filename: string;
+}
+
+export async function generateBudgetPDF(
+    data: BudgetPDFData,
+    opts: GenerateBudgetPDFOptions = {},
+): Promise<BudgetPDFResult | void> {
     let logoBase64: string | null = null;
     if (data.orgLogoUrl) logoBase64 = await urlToBase64(data.orgLogoUrl);
 
@@ -450,5 +463,11 @@ export async function generateBudgetPDF(data: BudgetPDFData) {
     );
 
     const safe = data.clientName.replace(/[^a-zA-Z0-9]/g, "_");
-    doc.save(`Orcamento_${safe}.pdf`);
+    const filename = `Orcamento_${safe}.pdf`;
+
+    if (opts.output === "blob") {
+        return { blob: doc.output("blob"), filename };
+    }
+
+    doc.save(filename);
 }

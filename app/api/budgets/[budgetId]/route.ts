@@ -38,8 +38,20 @@ export async function GET(req: Request, { params }: { params: { budgetId: string
             .eq('budget_id', params.budgetId)
             .order('position');
 
+        // Nome do usuário que elaborou o orçamento (responsável)
+        let createdByName: string | null = null;
+        if ((budget as any).created_by) {
+            const { data: creator } = await supabaseAdmin
+                .from('profiles')
+                .select('full_name')
+                .eq('id', (budget as any).created_by)
+                .single();
+            createdByName = creator?.full_name || null;
+        }
+
         return NextResponse.json({
             ...budget,
+            created_by_name: createdByName,
             environments: (environments || []).map(env => ({
                 ...env,
                 items: (items || []).filter(i => i.environment_id === env.id),

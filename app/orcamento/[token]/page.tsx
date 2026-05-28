@@ -6,8 +6,16 @@ import { toast } from "sonner";
 import { BudgetEnvironmentEditor } from "@/components/budget-environment-editor";
 import { BudgetPaymentSimulator } from "@/components/budget-payment-simulator";
 import { generateBudgetPDF } from "@/lib/generate-budget-pdf";
-import { ShieldCheck, LockOpen, User, FileDown, Printer, Clock, CheckCircle2, Send } from "lucide-react";
+import { ShieldCheck, LockOpen, User, FileDown, Clock, CheckCircle2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
+function WhatsAppIcon({ className }: { className?: string }) {
+    return (
+        <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+            <path d="M.057 24l1.687-6.163a11.867 11.867 0 01-1.587-5.946C.16 5.335 5.495 0 12.05 0a11.82 11.82 0 018.413 3.488 11.82 11.82 0 013.48 8.414c-.003 6.557-5.338 11.892-11.893 11.892a11.9 11.9 0 01-5.688-1.448L.057 24zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884a9.83 9.83 0 001.51 5.255l-.999 3.648 3.728-.978zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
+        </svg>
+    );
+}
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 interface OrgData {
@@ -37,6 +45,7 @@ interface PublicBudget {
     observations: string;
     status: string;
     created_at: string;
+    created_by_name: string | null;
     environments: any[];
     org: OrgData | null;
 }
@@ -54,6 +63,7 @@ export default function PublicBudgetPage() {
     const [loading, setLoading]         = useState(true);
     const [acting, setActing]               = useState(false);
     const [generatingPDF, setGeneratingPDF] = useState(false);
+    const [sharing, setSharing]             = useState(false);
     const [selectedPayment, setSelectedPayment] = useState<'prazo' | 'avista' | null>(null);
     const [alertOpen, setAlertOpen]         = useState(false);
 
@@ -135,57 +145,94 @@ export default function PublicBudgetPage() {
         }
     }, [token]);
 
+    // Monta os dados do PDF a partir do estado atual da tela
+    // (já atualizado em tempo real pelo toggle de itens).
+    const buildPdfData = () => {
+        if (!budget) return null;
+        const org = budget.org;
+        const validityDays = org?.budget_validity_days || 30;
+        const validity = new Date();
+        validity.setDate(validity.getDate() + validityDays);
+
+        const activeEnvs = (budget.environments || []).map((env: any) => ({
+            name: env.name,
+            items: (env.items || []).filter((i: any) => i.is_active).map((i: any) => ({
+                description:  i.description,
+                qty:          i.qty,
+                alt_cm:       i.alt_cm,
+                larg_cm:      i.larg_cm,
+                value_prazo:  i.value_prazo,
+                value_avista: i.value_avista,
+                is_active:    true,
+            })),
+        })).filter((e: any) => e.items.length > 0);
+
+        return {
+            orgName:               org?.name        || "Marcenaria",
+            orgCompanyName:        org?.company_name,
+            orgCNPJ:               org?.cnpj,
+            orgPhone:              org?.phone,
+            orgEmail:              org?.email,
+            orgAddress:            org?.address,
+            orgOwnerName:          org?.owner_name,
+            orgLogoUrl:            org?.logo_url,
+            validityDate:          validity.toLocaleDateString('pt-BR'),
+            clientName:            budget.client_name,
+            clientAddress:         budget.client_address,
+            // Condição de pagamento escolhida pelo cliente na tela
+            paymentType:           selectedPayment ?? budget.payment_type,
+            totalPrazo:            budget.total_prazo,
+            totalAvista:           budget.total_avista,
+            prazoEntryPercent:     budget.prazo_entry_percent,
+            prazoInstallments:     budget.prazo_installments,
+            avistaDiscountPercent: budget.avista_discount_percent,
+            avistaEntryPercent:    budget.avista_entry_percent,
+            environments:          activeEnvs,
+            observations:          budget.observations,
+            // Responsável = usuário que elaborou o orçamento (não o dono da empresa)
+            responsibleName:       budget.created_by_name || org?.owner_name,
+        };
+    };
+
     const handleDownloadPDF = async () => {
-        if (!budget) return;
+        const data = buildPdfData();
+        if (!data) return;
         setGeneratingPDF(true);
         try {
-            // Usa o estado atual da tela (já atualizado em tempo real pelo toggle de itens)
-            const org = budget.org;
-            const validityDays = org?.budget_validity_days || 30;
-            const validity = new Date();
-            validity.setDate(validity.getDate() + validityDays);
-
-            const activeEnvs = (budget.environments || []).map((env: any) => ({
-                name: env.name,
-                items: (env.items || []).filter((i: any) => i.is_active).map((i: any) => ({
-                    description:  i.description,
-                    qty:          i.qty,
-                    alt_cm:       i.alt_cm,
-                    larg_cm:      i.larg_cm,
-                    value_prazo:  i.value_prazo,
-                    value_avista: i.value_avista,
-                    is_active:    true,
-                })),
-            })).filter((e: any) => e.items.length > 0);
-
-            // Condição de pagamento escolhida pelo cliente na tela
-            const pdfPaymentType = selectedPayment ?? budget.payment_type;
-
-            await generateBudgetPDF({
-                orgName:               org?.name        || "Marcenaria",
-                orgCompanyName:        org?.company_name,
-                orgCNPJ:               org?.cnpj,
-                orgPhone:              org?.phone,
-                orgEmail:              org?.email,
-                orgAddress:            org?.address,
-                orgOwnerName:          org?.owner_name,
-                orgLogoUrl:            org?.logo_url,
-                validityDate:          validity.toLocaleDateString('pt-BR'),
-                clientName:            budget.client_name,
-                clientAddress:         budget.client_address,
-                paymentType:           pdfPaymentType,
-                totalPrazo:            budget.total_prazo,
-                totalAvista:           budget.total_avista,
-                prazoEntryPercent:     budget.prazo_entry_percent,
-                prazoInstallments:     budget.prazo_installments,
-                avistaDiscountPercent: budget.avista_discount_percent,
-                avistaEntryPercent:    budget.avista_entry_percent,
-                environments:          activeEnvs,
-                observations:          budget.observations,
-                responsibleName:       org?.owner_name,
-            });
+            await generateBudgetPDF(data);
         } finally {
             setGeneratingPDF(false);
+        }
+    };
+
+    const handleShareWhatsApp = async () => {
+        const data = buildPdfData();
+        if (!data) return;
+        setSharing(true);
+        try {
+            const result = await generateBudgetPDF(data, { output: "blob" });
+            if (!result) return;
+            const file = new File([result.blob], result.filename, { type: "application/pdf" });
+            const msg = `Olá! Segue o orçamento "${budget?.budget_number ?? ""}" da ${data.orgName}.`;
+
+            // Compartilhamento nativo com arquivo (mobile) — abre WhatsApp entre as opções
+            if (navigator.canShare?.({ files: [file] })) {
+                await navigator.share({ files: [file], title: "Orçamento", text: msg });
+                return;
+            }
+
+            // Fallback (desktop / navegadores sem file share): baixa o PDF e abre o WhatsApp com a mensagem
+            const url = URL.createObjectURL(result.blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = result.filename;
+            a.click();
+            URL.revokeObjectURL(url);
+            window.open(`https://wa.me/?text=${encodeURIComponent(msg + " (PDF baixado — anexe na conversa)")}`, "_blank");
+        } catch (e: any) {
+            if (e?.name !== "AbortError") toast.error("Não foi possível compartilhar o PDF.");
+        } finally {
+            setSharing(false);
         }
     };
 
@@ -304,22 +351,29 @@ export default function PublicBudgetPage() {
                 </div>
 
                 {/* Status + Ações */}
-                <div className={`rounded-xl border ${statusInfo.bg} ${statusInfo.border} px-4 py-3 space-y-3 print:hidden`}>
-                    <div className="flex items-center gap-2">
-                        <StatusIcon className={`h-5 w-5 shrink-0 ${statusInfo.text_c}`} />
-                        <p className={`text-base font-bold ${statusInfo.text_c}`}>{statusInfo.text}</p>
+                <div className="flex items-center gap-2 print:hidden">
+                    <div className={`flex items-center gap-2 rounded-full border ${statusInfo.bg} ${statusInfo.border} pl-3 pr-4 py-1.5`}>
+                        <StatusIcon className={`h-4 w-4 shrink-0 ${statusInfo.text_c}`} />
+                        <p className={`text-sm font-semibold ${statusInfo.text_c}`}>{statusInfo.text}</p>
                     </div>
-                    <div className="flex gap-2">
-                        <Button variant="outline" className="flex-1 h-11 text-sm gap-1.5"
-                            onClick={handleDownloadPDF} disabled={generatingPDF}>
-                            <FileDown className="h-4 w-4" />
-                            {generatingPDF ? "Gerando..." : "Baixar PDF"}
-                        </Button>
-                        <Button variant="outline" className="h-11 w-11 p-0 shrink-0"
-                            title="Imprimir" onClick={() => window.print()}>
-                            <Printer className="h-4 w-4" />
-                        </Button>
-                    </div>
+                    <div className="flex-1" />
+                    <Button
+                        size="icon"
+                        className="h-10 w-10 shrink-0 rounded-full bg-[#25D366] hover:bg-[#1ebe5b] text-white"
+                        title="Compartilhar no WhatsApp"
+                        onClick={handleShareWhatsApp}
+                        disabled={sharing || generatingPDF}>
+                        <WhatsAppIcon className="h-5 w-5" />
+                    </Button>
+                    <Button
+                        variant="outline"
+                        className="h-10 gap-1.5 rounded-full px-4 text-sm font-medium"
+                        title="Baixar PDF"
+                        onClick={handleDownloadPDF}
+                        disabled={generatingPDF || sharing}>
+                        <FileDown className="h-4 w-4" />
+                        {generatingPDF ? "Gerando..." : "PDF"}
+                    </Button>
                 </div>
 
                 {/* Ambientes */}
