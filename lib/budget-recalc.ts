@@ -1,26 +1,25 @@
-import { supabaseAdmin } from '@/lib/supabase-admin';
+import { eq, and } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { budgetItems, budgets } from '@/lib/db/schema';
 
 export async function recalcTotals(budgetId: string) {
-    const [{ data: items }, { data: budget }] = await Promise.all([
-        supabaseAdmin
-            .from('budget_items')
-            .select('value_prazo')
-            .eq('budget_id', budgetId)
-            .eq('is_active', true),
-        supabaseAdmin
-            .from('budgets')
-            .select('avista_discount_percent')
-            .eq('id', budgetId)
-            .single(),
+    const [items, budgetRow] = await Promise.all([
+        db.select({ valuePrazo: budgetItems.valuePrazo })
+            .from(budgetItems)
+            .where(and(eq(budgetItems.budgetId, budgetId), eq(budgetItems.isActive, true))),
+        db.select({ avistaDiscountPercent: budgets.avistaDiscountPercent })
+            .from(budgets)
+            .where(eq(budgets.id, budgetId))
+            .limit(1),
     ]);
 
-    const total_prazo = items?.reduce((s, i) => s + (i.value_prazo || 0), 0) ?? 0;
-    const discount    = budget?.avista_discount_percent ?? 0;
+    const total_prazo = items.reduce((s, i) => s + Number(i.valuePrazo || 0), 0);
+    const discount = Number(budgetRow[0]?.avistaDiscountPercent ?? 0);
     const total_avista = total_prazo * (1 - discount / 100);
 
-    await supabaseAdmin.from('budgets').update({
-        total_prazo:  Math.round(total_prazo  * 100) / 100,
-        total_avista: Math.round(total_avista * 100) / 100,
-        updated_at:   new Date().toISOString(),
-    }).eq('id', budgetId);
+    await db.update(budgets).set({
+        totalPrazo: String(Math.round(total_prazo * 100) / 100),
+        totalAvista: String(Math.round(total_avista * 100) / 100),
+        updatedAt: new Date().toISOString(),
+    }).where(eq(budgets.id, budgetId));
 }

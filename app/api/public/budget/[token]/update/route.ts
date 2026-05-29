@@ -1,18 +1,17 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase-admin';
+import { and, eq } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { budgets, budgetItems } from '@/lib/db/schema';
 import { recalcTotals } from '@/lib/budget-recalc';
 
 export const dynamic = 'force-dynamic';
 
 export async function PATCH(req: Request, { params }: { params: { token: string } }) {
     try {
-        const { data: budget, error: budgetErr } = await supabaseAdmin
-            .from('budgets')
-            .select('id, status')
-            .eq('public_token', params.token)
-            .single();
+        const [budget] = await db.select({ id: budgets.id, status: budgets.status })
+            .from(budgets).where(eq(budgets.publicToken, params.token)).limit(1);
 
-        if (budgetErr || !budget) {
+        if (!budget) {
             return NextResponse.json({ error: 'Orçamento não encontrado.' }, { status: 404 });
         }
 
@@ -21,60 +20,40 @@ export async function PATCH(req: Request, { params }: { params: { token: string 
                 prazo_entry_percent, prazo_installments,
                 avista_discount_percent, avista_entry_percent } = body;
 
-        // Atualizar status do orçamento (aprovado/rejeitado pelo cliente)
         if (action === 'set_status' && status) {
-            const updatePayload: any = { status, updated_at: new Date().toISOString() };
-            if (chosen_payment_type) {
-                updatePayload.payment_type = chosen_payment_type;
-            } else if (status === 'sent') {
-                updatePayload.payment_type = 'both';
-            }
-            const { data: rows, error: updateErr } = await supabaseAdmin
-                .from('budgets')
-                .update(updatePayload)
-                .eq('id', budget.id)
-                .select('id');
-            if (updateErr) {
-                console.error('[budget update] set_status error:', updateErr);
-                return NextResponse.json({ error: updateErr.message }, { status: 500 });
-            }
-            if (!rows || rows.length === 0) {
+            const updates: Record<string, any> = { status, updatedAt: new Date().toISOString() };
+            if (chosen_payment_type) updates.paymentType = chosen_payment_type;
+            else if (status === 'sent') updates.paymentType = 'both';
+
+            const rows = await db.update(budgets).set(updates).where(eq(budgets.id, budget.id)).returning({ id: budgets.id });
+            if (rows.length === 0) {
                 return NextResponse.json({ error: 'Nenhuma linha atualizada.' }, { status: 500 });
             }
             return NextResponse.json({ ok: true });
         }
 
-        // Atualizar condições de pagamento
         if (action === 'update_payment') {
-            const updates: any = { updated_at: new Date().toISOString() };
-            if (prazo_entry_percent    !== undefined) updates.prazo_entry_percent    = prazo_entry_percent;
-            if (prazo_installments     !== undefined) updates.prazo_installments     = prazo_installments;
-            if (avista_discount_percent !== undefined) updates.avista_discount_percent = avista_discount_percent;
-            if (avista_entry_percent   !== undefined) updates.avista_entry_percent   = avista_entry_percent;
-            await supabaseAdmin.from('budgets').update(updates).eq('id', budget.id);
+            const updates: Record<string, any> = { updatedAt: new Date().toISOString() };
+            if (prazo_entry_percent !== undefined) updates.prazoEntryPercent = String(prazo_entry_percent);
+            if (prazo_installments !== undefined) updates.prazoInstallments = prazo_installments;
+            if (avista_discount_percent !== undefined) updates.avistaDiscountPercent = String(avista_discount_percent);
+            if (avista_entry_percent !== undefined) updates.avistaEntryPercent = String(avista_entry_percent);
+            await db.update(budgets).set(updates).where(eq(budgets.id, budget.id));
             return NextResponse.json({ ok: true });
         }
 
-        // Atualizar item (is_active / qty)
         if (item_id) {
-            const itemUpdates: any = {};
-            if (is_active !== undefined) itemUpdates.is_active = is_active;
-            if (qty       !== undefined) itemUpdates.qty       = qty;
+            const itemUpdates: Record<string, any> = {};
+            if (is_active !== undefined) itemUpdates.isActive = is_active;
+            if (qty !== undefined) itemUpdates.qty = String(qty);
 
-            const { error } = await supabaseAdmin
-                .from('budget_items')
-                .update(itemUpdates)
-                .eq('id', item_id)
-                .eq('budget_id', budget.id);
+            await db.update(budgetItems).set(itemUpdates)
+                .where(and(eq(budgetItems.id, item_id), eq(budgetItems.budgetId, budget.id)));
 
-            if (error) throw error;
             await recalcTotals(budget.id);
 
-            const { data: updated } = await supabaseAdmin
-                .from('budgets')
-                .select('total_prazo, total_avista')
-                .eq('id', budget.id)
-                .single();
+            const [updated] = await db.select({ total_prazo: budgets.totalPrazo, total_avista: budgets.totalAvista })
+                .from(budgets).where(eq(budgets.id, budget.id)).limit(1);
 
             return NextResponse.json({ ok: true, totals: updated });
         }

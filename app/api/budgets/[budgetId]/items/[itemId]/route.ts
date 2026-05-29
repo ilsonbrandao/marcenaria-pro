@@ -1,57 +1,51 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase-admin';
+import { and, eq } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { budgetItems, budgets } from '@/lib/db/schema';
+import { getCaller } from '@/lib/auth-helpers';
+import { snakeKeys } from '@/lib/case';
 
-async function getCallerProfile(req: Request) {
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) return null;
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user } } = await supabaseAdmin.auth.getUser(token);
-    if (!user) return null;
-    const { data: profile } = await supabaseAdmin.from('profiles').select('*').eq('id', user.id).single();
-    return profile;
-}
-
+// Recalcula somando value_prazo e value_avista por item (sem desconto).
 async function recalcTotals(budgetId: string) {
-    const { data: items } = await supabaseAdmin
-        .from('budget_items')
-        .select('value_prazo, value_avista')
-        .eq('budget_id', budgetId)
-        .eq('is_active', true);
+    const items = await db
+        .select({ valuePrazo: budgetItems.valuePrazo, valueAvista: budgetItems.valueAvista })
+        .from(budgetItems)
+        .where(and(eq(budgetItems.budgetId, budgetId), eq(budgetItems.isActive, true)));
 
-    const total_prazo  = items?.reduce((s, i) => s + (i.value_prazo  || 0), 0) ?? 0;
-    const total_avista = items?.reduce((s, i) => s + (i.value_avista || 0), 0) ?? 0;
+    const total_prazo = items.reduce((s, i) => s + Number(i.valuePrazo || 0), 0);
+    const total_avista = items.reduce((s, i) => s + Number(i.valueAvista || 0), 0);
 
-    await supabaseAdmin.from('budgets').update({
-        total_prazo:  Math.round(total_prazo  * 100) / 100,
-        total_avista: Math.round(total_avista * 100) / 100,
-        updated_at:   new Date().toISOString(),
-    }).eq('id', budgetId);
+    await db.update(budgets).set({
+        totalPrazo: String(Math.round(total_prazo * 100) / 100),
+        totalAvista: String(Math.round(total_avista * 100) / 100),
+        updatedAt: new Date().toISOString(),
+    }).where(eq(budgets.id, budgetId));
 }
 
 export async function PUT(req: Request, { params }: { params: { budgetId: string; itemId: string } }) {
     try {
-        const caller = await getCallerProfile(req);
+        const caller = await getCaller();
         if (!caller || caller.role === 'carpenter') {
             return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
         }
 
         const body = await req.json();
-        const allowed = ['description', 'qty', 'alt_cm', 'larg_cm', 'prof_cm', 'price_prazo_m2', 'price_avista_m2', 'is_active', 'position'];
-        const updates: any = {};
-        for (const key of allowed) {
-            if (body[key] !== undefined) updates[key] = body[key];
+        const map: Record<string, string> = {
+            description: 'description', qty: 'qty', alt_cm: 'altCm', larg_cm: 'largCm', prof_cm: 'profCm',
+            price_prazo_m2: 'pricePrazoM2', price_avista_m2: 'priceAvistaM2', is_active: 'isActive', position: 'position',
+        };
+        const numeric = new Set(['qty', 'alt_cm', 'larg_cm', 'prof_cm', 'price_prazo_m2', 'price_avista_m2']);
+        const updates: Record<string, any> = {};
+        for (const key of Object.keys(map)) {
+            if (body[key] !== undefined) updates[map[key]] = numeric.has(key) ? String(body[key]) : body[key];
         }
 
-        const { data, error } = await supabaseAdmin
-            .from('budget_items')
-            .update(updates)
-            .eq('id', params.itemId)
-            .eq('budget_id', params.budgetId)
-            .select().single();
+        const [data] = await db.update(budgetItems).set(updates)
+            .where(and(eq(budgetItems.id, params.itemId), eq(budgetItems.budgetId, params.budgetId)))
+            .returning();
 
-        if (error) throw error;
         await recalcTotals(params.budgetId);
-        return NextResponse.json(data);
+        return NextResponse.json(snakeKeys(data));
     } catch (e: any) {
         return NextResponse.json({ error: e.message }, { status: 500 });
     }
@@ -59,18 +53,14 @@ export async function PUT(req: Request, { params }: { params: { budgetId: string
 
 export async function DELETE(req: Request, { params }: { params: { budgetId: string; itemId: string } }) {
     try {
-        const caller = await getCallerProfile(req);
+        const caller = await getCaller();
         if (!caller || caller.role === 'carpenter') {
             return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
         }
 
-        const { error } = await supabaseAdmin
-            .from('budget_items')
-            .delete()
-            .eq('id', params.itemId)
-            .eq('budget_id', params.budgetId);
+        await db.delete(budgetItems)
+            .where(and(eq(budgetItems.id, params.itemId), eq(budgetItems.budgetId, params.budgetId)));
 
-        if (error) throw error;
         await recalcTotals(params.budgetId);
         return NextResponse.json({ ok: true });
     } catch (e: any) {
