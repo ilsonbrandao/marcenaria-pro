@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useRBAC } from "./rbac-provider";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
-import { supabase } from "@/lib/supabaseClient";
 import {
     LayoutDashboard, Wallet, Package, Users,
     Hammer, BarChart3, Building2, CalendarDays, Truck,
@@ -110,8 +109,10 @@ function OrgBrand() {
 
     useEffect(() => {
         if (!effectiveOrgId) { setOrg(null); return; }
-        supabase.from("organizations").select("name, logo_url").eq("id", effectiveOrgId).single()
-            .then(({ data }) => setOrg(data));
+        fetch(`/api/organizations?id=${effectiveOrgId}`, { cache: "no-store" })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => setOrg(data ? { name: data.name, logo_url: data.logo_url } : null))
+            .catch(() => setOrg(null));
     }, [effectiveOrgId]);
 
     if (isSysadmin && !effectiveOrgId) {
