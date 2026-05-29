@@ -9,10 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
-import { AuthService } from "@/services/authService";
 
 type OptionItem = { id: string; name: string };
 
@@ -31,8 +29,12 @@ export function NewSaleDialog({ onSaleAdded }: { onSaleAdded: () => void }) {
 
     useEffect(() => {
         if (open) {
-            supabase.from("clients").select("id, name").order("name").then(({ data }) => setClients(data as OptionItem[] || []));
-            supabase.from("architects").select("id, name").order("name").then(({ data }) => setArchitects(data as OptionItem[] || []));
+            fetch("/api/clients", { cache: "no-store" })
+                .then((r) => (r.ok ? r.json() : []))
+                .then((d) => setClients((d || []).map((c: any) => ({ id: c.id, name: c.name }))));
+            fetch("/api/architects", { cache: "no-store" })
+                .then((r) => (r.ok ? r.json() : { architects: [] }))
+                .then((d) => setArchitects((d.architects || []).map((a: any) => ({ id: a.id, name: a.name }))));
         }
     }, [open]);
 
@@ -46,36 +48,22 @@ export function NewSaleDialog({ onSaleAdded }: { onSaleAdded: () => void }) {
     const handleSave = async () => {
         try {
             setLoading(true);
-            const profile = await AuthService.getProfile();
-            if (!profile || !profile.organization_id) {
-                throw new Error("Perfil ou organização não encontrados.");
-            }
-
             const val = parseFloat(totalValue.replace(/\D/g, "")) / 100 || 0;
 
-            const insertData: any = {
-                organization_id: profile.organization_id,
+            const payload: any = {
                 client_name: clientName.trim(),
                 total_value: val,
                 status: 'Orçamento',
                 notes: description.trim() || null,
             };
+            if (selectedClient) payload.client_id = selectedClient;
+            if (selectedArchitect) payload.architect_id = selectedArchitect;
 
-            if (selectedClient) insertData.client_id = selectedClient;
-            if (selectedArchitect) {
-                insertData.architect_id = selectedArchitect;
-                // Buscar RT padrão do arquiteto
-                const { data: archData } = await supabase
-                    .from("architects")
-                    .select("default_rt_percent")
-                    .eq("id", selectedArchitect)
-                    .single();
-                if (archData) insertData.rt_architect_percent = archData.default_rt_percent;
-            }
-
-            const { error } = await supabase.from('sales').insert(insertData);
-
-            if (error) throw error;
+            const res = await fetch('/api/sales', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha");
 
             toast.success("Projeto criado!", { description: "O novo orçamento foi adicionado ao Kanban." });
             setOpen(false);

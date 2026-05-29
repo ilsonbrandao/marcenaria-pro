@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,11 +28,10 @@ export function TeamManager() {
     const fetchTeam = async () => {
         try {
             setLoading(true);
-            const { data, error } = await supabase.from("profiles").select("id, full_name, role");
-            // Devido ao RLS "Isolamento de Tenant - Profiles", ele só vai retornar os perfis da própria organização do usuário
-
-            if (error) throw error;
-            setTeam(data as TeamMember[]);
+            const res = await fetch("/api/users", { cache: "no-store" });
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha ao carregar");
+            const data = await res.json();
+            setTeam((data as any[]).map((u) => ({ id: u.id, full_name: u.full_name, role: u.role })) as TeamMember[]);
         } catch (err: any) {
             toast.error("Erro ao carregar a equipe", { description: err.message });
         } finally {
@@ -61,22 +59,16 @@ export function TeamManager() {
         if (!inviteEmail) return;
         try {
             setInviting(true);
-            const token = (await supabase.auth.getSession()).data.session?.access_token;
-            if (!token) throw new Error("Usuário não autenticado");
-
             const res = await fetch("/api/invite", {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`
-                },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email: inviteEmail, fullName: inviteName, role: inviteRole }),
             });
             const data = await res.json();
 
             if (!res.ok) throw new Error(data.error || "Erro desconhecido ao convidar.");
 
-            toast.success("Convite enviado!", { description: `Um e-mail foi enviado para ${inviteEmail}.` });
+            toast.success("Usuário criado!", { description: data.temp_password ? `Senha temporária: ${data.temp_password}` : `Repasse o acesso a ${inviteEmail}.` });
             setInviteEmail("");
             setInviteName("");
             setInviteRole("carpenter");
@@ -92,11 +84,8 @@ export function TeamManager() {
         if (!confirm("Remover este usuário da marcenaria? Ele perderá todo o acesso.")) return;
 
         try {
-            // Remove o perfil (O RLS em profiles é FOR ALL, mas precisa deixar o owner apagar)
-            // IMPORTANTE: Por padrão o RLS FOR ALL sem política restritiva de DELETE vai falhar.
-            // O certo é ter uma política de DELETE na tabela profiles, igual fizemos na de sales.
-            const { error } = await supabase.from("profiles").delete().eq("id", id);
-            if (error) throw error;
+            const res = await fetch(`/api/users?id=${id}`, { method: "DELETE" });
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha ao remover");
 
             toast.success("Usuário removido da equipe com sucesso!");
             fetchTeam();

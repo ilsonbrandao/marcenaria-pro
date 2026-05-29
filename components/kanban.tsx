@@ -2,10 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
-import { supabase } from '@/lib/supabaseClient';
 import { NewSaleDialog } from './new-sale-dialog';
 import { ProjectDetailsSheet } from './project-details-sheet';
-import { AuthService } from '@/services/authService';
 import { useRBAC } from './rbac-provider';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -47,13 +45,9 @@ export function KanbanBoard() {
   const fetchProjects = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('sales')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setProjects(data as SaleProject[]);
+      const res = await fetch('/api/sales', { cache: 'no-store' });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Falha ao buscar projetos');
+      setProjects((await res.json()) as SaleProject[]);
     } catch (err: any) {
       toast.error('Erro ao buscar projetos', { description: err.message });
     } finally {
@@ -63,18 +57,6 @@ export function KanbanBoard() {
 
   useEffect(() => {
     fetchProjects();
-
-    // Inscrição para Tempo Real do Supabase para o Kanban
-    const salesSubscription = supabase
-      .channel('sales-kanban')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, () => {
-        fetchProjects(); // Recarrega quando algo muda no banco em tempo real
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(salesSubscription);
-    };
   }, []);
 
   const formatBRL = (value: number) =>
@@ -112,31 +94,27 @@ export function KanbanBoard() {
     ));
 
     // Atualiza Status na Nuvem
-    const { error } = await supabase
-      .from('sales')
-      .update({ status: newStatus })
-      .eq('id', draggableId);
+    const res = await fetch('/api/sales', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: draggableId, status: newStatus }),
+    });
 
-    if (error) {
-      toast.error('Erro ao mover projeto', { description: error.message });
+    if (!res.ok) {
+      toast.error('Erro ao mover projeto', { description: (await res.json().catch(() => ({}))).error });
       fetchProjects();
       return;
     }
+    const info = await res.json().catch(() => ({}));
 
     // ==========================================
     // BAIXA AUTOMÁTICA DE ESTOQUE (→ Produção)
     // ==========================================
     if (newStatus === 'Produção' && oldStatus === 'Orçamento') {
-      // Busca materiais já vinculados a este projeto
-      const { data: linkedMaterials } = await supabase
-        .from('stock_movements')
-        .select('inventory_id, quantity')
-        .eq('sale_id', draggableId)
-        .eq('movement_type', 'OUT');
-
-      if (linkedMaterials && linkedMaterials.length > 0) {
+      const linkedCount = info.linked_materials_count ?? 0;
+      if (linkedCount > 0) {
         toast.success('🏭 Produção iniciada!', {
-          description: `${linkedMaterials.length} material(is) já deduzidos do estoque.`,
+          description: `${linkedCount} material(is) já deduzidos do estoque.`,
         });
       } else {
         toast.info('🏭 Produção iniciada!', {
@@ -151,14 +129,7 @@ export function KanbanBoard() {
     if (newStatus === 'Concluído') {
       const project = projects.find((p: SaleProject) => p.id === draggableId);
       if (project) {
-        // Buscar todas as despesas diretas vinculadas
-        const { data: directExpenses } = await supabase
-          .from('expenses')
-          .select('amount')
-          .eq('sale_id', draggableId)
-          .eq('expense_type', 'Direct');
-
-        const totalDirectExpenses = (directExpenses || []).reduce((s: number, e: any) => s + (e.amount || 0), 0);
+        const totalDirectExpenses = info.total_direct_expenses ?? 0;
 
         // Custo total real = material + frete + despesas diretas
         const realCosts = (project.raw_material_cost || 0) + (project.freight_cost || 0) + totalDirectExpenses;

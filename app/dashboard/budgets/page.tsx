@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback } from "react";
 import { useRBAC } from "@/components/rbac-provider";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AuthService } from "@/services/authService";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,7 +11,6 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, FileText, Share2, Trash2, Search, Eye } from "lucide-react";
-import { supabase } from "@/lib/supabaseClient";
 
 interface Budget {
     id: string;
@@ -72,10 +70,8 @@ export default function BudgetsPage() {
         if (!loading && isCarpenter) router.replace("/dashboard");
     }, [loading, isCarpenter, router]);
 
-    const authHeader = async () => {
-        const tok = await AuthService.getAccessToken();
-        return { Authorization: `Bearer ${tok}` };
-    };
+    // Sessão vai por cookie (Auth.js); sem Bearer token.
+    const authHeader = async (): Promise<Record<string, string>> => ({});
 
     const load = useCallback(async () => {
         setFetching(true);
@@ -98,7 +94,7 @@ export default function BudgetsPage() {
     // carrega clientes + padrões de pagamento da org ao abrir o dialog
     useEffect(() => {
         if (!openNew) return;
-        supabase.from('clients').select('id, name, address').order('name').then(({ data }) => setClients(data || []));
+        fetch('/api/clients', { cache: 'no-store' }).then(r => r.ok ? r.json() : []).then((data) => setClients((data || []).map((c: any) => ({ id: c.id, name: c.name, address: c.address }))));
         authHeader().then(h =>
             fetch('/api/settings', { headers: h })
                 .then(r => r.ok ? r.json() : null)

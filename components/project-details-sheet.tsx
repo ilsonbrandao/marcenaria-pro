@@ -7,9 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { supabase } from "@/lib/supabaseClient";
 import { toast } from "sonner";
-import { AuthService } from "@/services/authService";
 import {
     Save, Wallet, Percent, PackageOpen, Trash2, FileText,
     AlertTriangle, Upload, ImageIcon, FileIcon, X, Download,
@@ -87,18 +85,15 @@ export function ProjectDetailsSheet({ project, open, onOpenChange, onUpdated }: 
 
     const loadNotes = async () => {
         if (!project) return;
-        const { data } = await supabase.from('sales').select('notes').eq('id', project.id).single();
-        setNotes(data?.notes || "");
+        const res = await fetch(`/api/sales?id=${project.id}`, { cache: 'no-store' });
+        if (res.ok) { const data = await res.json(); setNotes(data?.notes || ""); }
     };
 
     const loadFiles = async () => {
         if (!project) return;
         setLoadingFiles(true);
         try {
-            const token = await AuthService.getAccessToken();
-            const res = await fetch(`/api/sales/${project.id}/files`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const res = await fetch(`/api/sales/${project.id}/files`);
             if (res.ok) setFiles(await res.json());
         } finally {
             setLoadingFiles(false);
@@ -109,10 +104,9 @@ export function ProjectDetailsSheet({ project, open, onOpenChange, onUpdated }: 
         if (!project) return;
         setSavingNotes(true);
         try {
-            const token = await AuthService.getAccessToken();
             const res = await fetch(`/api/sales/${project.id}/notes`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ notes }),
             });
             if (!res.ok) throw new Error((await res.json()).error);
@@ -136,12 +130,10 @@ export function ProjectDetailsSheet({ project, open, onOpenChange, onUpdated }: 
 
         setUploading(true);
         try {
-            const token = await AuthService.getAccessToken();
             const form = new FormData();
             form.append('file', file);
             const res = await fetch(`/api/sales/${project.id}/files`, {
                 method: 'POST',
-                headers: { Authorization: `Bearer ${token}` },
                 body: form,
             });
             if (!res.ok) throw new Error((await res.json()).error);
@@ -159,10 +151,8 @@ export function ProjectDetailsSheet({ project, open, onOpenChange, onUpdated }: 
         if (!project) return;
         if (!confirm(`Remover "${fileName}"?`)) return;
         try {
-            const token = await AuthService.getAccessToken();
             const res = await fetch(`/api/sales/${project.id}/files?fileId=${fileId}`, {
                 method: 'DELETE',
-                headers: { Authorization: `Bearer ${token}` },
             });
             if (!res.ok) throw new Error((await res.json()).error);
             toast.success("Arquivo removido.");
@@ -185,8 +175,11 @@ export function ProjectDetailsSheet({ project, open, onOpenChange, onUpdated }: 
         if (!project) return;
         setLoading(true);
         try {
-            const { error } = await supabase.from('sales').update(formData).eq('id', project.id);
-            if (error) throw error;
+            const res = await fetch('/api/sales', {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: project.id, ...formData }),
+            });
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha");
             toast.success("Projeto atualizado!");
             onUpdated();
             onOpenChange(false);
@@ -201,10 +194,9 @@ export function ProjectDetailsSheet({ project, open, onOpenChange, onUpdated }: 
         if (!project || !reportMessage.trim()) return;
         setReportLoading(true);
         try {
-            const token = await AuthService.getAccessToken();
             const res = await fetch(`/api/sales/${project.id}/report`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ message: reportMessage }),
             });
             const data = await res.json();
@@ -450,8 +442,8 @@ export function ProjectDetailsSheet({ project, open, onOpenChange, onUpdated }: 
                                     className="w-full border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-900/20"
                                     onClick={async () => {
                                         if (!confirm(`Excluir "${project.client_name}"?`)) return;
-                                        const { error } = await supabase.from('sales').delete().eq('id', project.id);
-                                        if (error) { toast.error(error.message); return; }
+                                        const res = await fetch(`/api/sales?id=${project.id}`, { method: 'DELETE' });
+                                        if (!res.ok) { toast.error((await res.json().catch(() => ({}))).error || "Falha"); return; }
                                         toast.success('Projeto excluído.');
                                         onUpdated();
                                         onOpenChange(false);
