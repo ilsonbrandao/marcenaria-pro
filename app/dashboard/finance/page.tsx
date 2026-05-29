@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +29,6 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-import { AuthService } from "@/services/authService";
 import { Plus, TrendingUp, TrendingDown, DollarSign, Wallet, ArrowUpCircle, ArrowDownCircle, Trash2, CalendarDays, X } from "lucide-react";
 import { FinanceCharts } from "@/components/finance-charts";
 
@@ -86,26 +84,11 @@ export default function FinancePage() {
     const fetchData = async () => {
         try {
             setLoading(true);
-            const [expRes, salesRes] = await Promise.all([
-                supabase
-                    .from("expenses")
-                    .select("*, sales(client_name)")
-                    .gte("date_incurred", dateFrom)
-                    .lte("date_incurred", dateTo)
-                    .order("date_incurred", { ascending: false }),
-                supabase
-                    .from("sales")
-                    .select("*")
-                    .gte("created_at", dateFrom)
-                    .lte("created_at", dateTo + "T23:59:59")
-                    .order("created_at", { ascending: false }),
-            ]);
-
-            if (expRes.error) throw expRes.error;
-            if (salesRes.error) throw salesRes.error;
-
-            setExpenses(expRes.data as Expense[]);
-            setSales(salesRes.data as Sale[]);
+            const res = await fetch(`/api/finance?from=${dateFrom}&to=${dateTo}`, { cache: "no-store" });
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha ao carregar");
+            const json = await res.json();
+            setExpenses(json.expenses as Expense[]);
+            setSales(json.sales as Sale[]);
         } catch (err: any) {
             toast.error("Erro ao carregar dados financeiros", { description: err.message });
         } finally {
@@ -133,19 +116,16 @@ export default function FinancePage() {
 
         try {
             setFormLoading(true);
-            const profile = await AuthService.getProfile();
-            if (!profile?.organization_id) throw new Error("Organização não encontrada.");
-
-            const { error } = await supabase.from("expenses").insert({
-                organization_id: profile.organization_id,
-                description: description.trim(),
-                amount: val,
-                expense_type: expenseType,
-                sale_id: saleId || null,
-                date_incurred: new Date().toISOString().split("T")[0],
+            const res = await fetch("/api/finance", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    description: description.trim(),
+                    amount: val,
+                    expense_type: expenseType,
+                    sale_id: saleId || null,
+                }),
             });
-
-            if (error) throw error;
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha ao salvar");
 
             toast.success("Despesa registrada!");
             setDialogOpen(false);
@@ -164,8 +144,8 @@ export default function FinancePage() {
         if (!expenseToDelete) return;
         try {
             setDeleteLoading(true);
-            const { error } = await supabase.from("expenses").delete().eq("id", expenseToDelete.id);
-            if (error) throw error;
+            const res = await fetch(`/api/finance?id=${expenseToDelete.id}`, { method: "DELETE" });
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha ao excluir");
             toast.success("Despesa excluída");
             setDeleteDialogOpen(false);
             setExpenseToDelete(null);

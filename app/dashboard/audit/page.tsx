@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { useRBAC } from "@/components/rbac-provider";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -55,18 +54,10 @@ export default function AuditPage() {
 
     const load = async (p = 0) => {
         setLoadingData(true);
-        let query = supabase
-            .from("audit_logs")
-            .select("*, profiles(full_name)", { count: "exact" })
-            .order("created_at", { ascending: false })
-            .range(p * PAGE_SIZE, (p + 1) * PAGE_SIZE - 1);
-
-        if (tableFilter !== "all") query = query.eq("table_name", tableFilter);
-        if (actionFilter !== "all") query = query.eq("action", actionFilter);
-
-        const { data, error } = await query;
-        if (error) toast.error(error.message);
-        else setLogs((data as any) || []);
+        const qs = new URLSearchParams({ table: tableFilter, action: actionFilter, page: String(p) });
+        const res = await fetch(`/api/audit?${qs}`, { cache: "no-store" });
+        if (!res.ok) toast.error((await res.json().catch(() => ({}))).error || "Falha ao carregar");
+        else setLogs((await res.json()) || []);
         setLoadingData(false);
     };
 

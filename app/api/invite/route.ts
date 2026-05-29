@@ -1,75 +1,56 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase-admin';
-import { createClient } from '@supabase/supabase-js';
+import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
+import { eq } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { profiles, users } from '@/lib/db/schema';
+import { getCaller } from '@/lib/auth-helpers';
 
+// Sem SMTP no ambiente: em vez de enviar convite por e-mail, criamos o usuário
+// com uma senha temporária aleatória e a retornamos para o admin repassar.
 export async function POST(req: Request) {
     try {
-        const authHeader = req.headers.get('Authorization');
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        const caller = await getCaller();
+        if (!caller) {
             return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
         }
-
-        const token = authHeader.split(' ')[1];
-
-        // Cria um client vazio so para decodificar o token com a chave anon
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-        const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-        const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-        const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-
-        if (userError || !user) {
-            return NextResponse.json({ error: 'Sessão inválida' }, { status: 401 });
+        if (!['sysadmin', 'owner', 'office'].includes(caller.role)) {
+            return NextResponse.json({ error: 'Apenas administradores podem convidar usuários.' }, { status: 403 });
         }
 
         const { email, fullName, role } = await req.json();
-
         if (!email || !role) {
             return NextResponse.json({ error: 'E-mail e Perfil são obrigatórios' }, { status: 400 });
         }
 
-        // Descobre a organização do usuário logado e certifica que ele é owner ou admin
-        const { data: callerProfile, error: callerError } = await supabaseAdmin
-            .from('profiles')
-            .select('role, organization_id')
-            .eq('id', user.id)
-            .single();
-
-        if (callerError || !callerProfile) {
-            return NextResponse.json({ error: 'Perfil não encontrado' }, { status: 403 });
+        const normalizedEmail = String(email).trim().toLowerCase();
+        const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, normalizedEmail)).limit(1);
+        if (existing) {
+            return NextResponse.json({ error: 'Este e-mail já está cadastrado.' }, { status: 400 });
         }
 
-        if (!['sysadmin', 'owner', 'office'].includes(callerProfile.role)) {
-            return NextResponse.json({ error: 'Apenas administradores podem convidar usuários.' }, { status: 403 });
-        }
+        const tempPassword = crypto.randomBytes(6).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 10);
+        const passwordHash = await bcrypt.hash(tempPassword, 10);
 
-        // Tenta enviar o convite pelo Supabase Auth Admin
-        const { data: userInviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-            data: {
-                full_name: fullName,
-                organization_id: callerProfile.organization_id
-            }
+        const [newUser] = await db.insert(users).values({
+            email: normalizedEmail,
+            passwordHash,
+            emailVerified: new Date().toISOString(),
+        }).returning({ id: users.id });
+
+        await db.insert(profiles).values({
+            id: newUser.id,
+            organizationId: caller.organizationId,
+            role,
+            fullName: fullName || normalizedEmail.split('@')[0],
         });
 
-        if (inviteError) {
-            return NextResponse.json({ error: inviteError.message }, { status: 500 });
-        }
-
-        const newUserId = userInviteData?.user?.id;
-
-        if (newUserId) {
-            // Cria ou atualiza o perfil do novo usuário na tabela profiles para vincular à org
-            await supabaseAdmin.from('profiles').upsert({
-                id: newUserId,
-                organization_id: callerProfile.organization_id,
-                role: role,
-                full_name: fullName || email.split('@')[0],
-            });
-        }
-
-        return NextResponse.json({ success: true, message: 'Convite enviado e perfil configurado.' });
-
+        return NextResponse.json({
+            success: true,
+            message: 'Usuário criado. Repasse a senha temporária ao novo usuário.',
+            temp_password: tempPassword,
+        });
     } catch (error: any) {
-        return NextResponse.json({ error: 'Erro interno no servidor' }, { status: 500 });
+        return NextResponse.json({ error: error.message || 'Erro interno no servidor' }, { status: 500 });
     }
 }

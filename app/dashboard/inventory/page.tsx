@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +29,6 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-import { AuthService } from "@/services/authService";
 import { Plus, Package, Layers, Search } from "lucide-react";
 import { DataPagination } from "@/components/ui/data-pagination";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -67,12 +65,9 @@ export default function InventoryPage() {
     const fetchItems = async () => {
         try {
             setLoading(true);
-            const { data, error } = await supabase
-                .from("inventory")
-                .select("*")
-                .order("category", { ascending: true });
-            if (error) throw error;
-            setItems(data as InventoryItem[]);
+            const res = await fetch("/api/inventory", { cache: "no-store" });
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha ao carregar");
+            setItems((await res.json()) as InventoryItem[]);
         } catch (err: any) {
             toast.error("Erro ao carregar estoque", { description: err.message });
         } finally {
@@ -87,49 +82,23 @@ export default function InventoryPage() {
     const handleAdd = async () => {
         try {
             setFormLoading(true);
-            const profile = await AuthService.getProfile();
-            if (!profile?.organization_id) throw new Error("Organização não encontrada.");
-
             const unitCost = parseFloat(costPerUnit.replace(/\D/g, "")) / 100 || 0;
-
             const parsedQuantity = parseFloat(quantity) || 0;
-            const { data: insertedItem, error } = await supabase.from("inventory").insert({
-                organization_id: profile.organization_id,
-                category,
-                brand: brand.trim(),
-                name_or_color: nameOrColor.trim(),
-                thickness: category === "MDF" ? parseFloat(thickness) || null : null,
-                quantity: parsedQuantity,
-                cost_per_unit: unitCost,
-            }).select("id").single();
 
-            if (error) throw error;
-
-            // Registra movimentação de entrada no estoque
-            if (insertedItem && parsedQuantity > 0) {
-                await supabase.from("stock_movements").insert({
-                    organization_id: profile.organization_id,
-                    inventory_id: insertedItem.id,
-                    movement_type: "IN",
+            const res = await fetch("/api/inventory", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    category,
+                    brand: brand.trim(),
+                    name_or_color: nameOrColor.trim(),
+                    thickness: category === "MDF" ? parseFloat(thickness) || null : null,
                     quantity: parsedQuantity,
-                    notes: `Entrada inicial: ${brand.trim()} ${nameOrColor.trim()}`,
-                });
-            }
-
-            if (generateExpense && unitCost > 0 && parsedQuantity > 0) {
-                const totalCost = parsedQuantity * unitCost;
-                const { error: expError } = await supabase.from("expenses").insert({
-                    organization_id: profile.organization_id,
-                    description: `Compra de Estoque: ${category} - ${brand} ${nameOrColor}`,
-                    amount: totalCost,
-                    expense_type: "Fixed", // Despesas gerais de estoque (Fixed cost)
-                    date_incurred: new Date().toISOString().split("T")[0],
-                });
-
-                if (expError) {
-                    toast.error("Estoque adicionado, mas falhou ao gerar despesa.", { description: expError.message });
-                }
-            }
+                    cost_per_unit: unitCost,
+                    generate_expense: generateExpense,
+                }),
+            });
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha ao salvar");
 
             toast.success("Item adicionado ao estoque!");
             setDialogOpen(false);
@@ -151,8 +120,8 @@ export default function InventoryPage() {
         if (!confirm(`Tem certeza que deseja excluir '${name}' do estoque?`)) return;
 
         try {
-            const { error } = await supabase.from("inventory").delete().eq("id", id);
-            if (error) throw error;
+            const res = await fetch(`/api/inventory?id=${id}`, { method: "DELETE" });
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha ao excluir");
             toast.success("Item excluído com sucesso!");
             fetchItems();
         } catch (err: any) {

@@ -1,12 +1,10 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AuthService } from "@/services/authService";
 import { Plus, Check, Calendar, DollarSign, Pencil, Trash2 } from "lucide-react";
 
 type Installment = {
@@ -48,14 +46,9 @@ export function InstallmentsManager({ saleId, totalValue }: InstallmentsManagerP
     const fetchInstallments = async () => {
         try {
             setLoading(true);
-            const { data, error } = await supabase
-                .from("installments")
-                .select("*")
-                .eq("sale_id", saleId)
-                .order("due_date", { ascending: true });
-
-            if (error) throw error;
-            setInstallments(data as Installment[]);
+            const res = await fetch(`/api/installments?saleId=${saleId}`, { cache: "no-store" });
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha ao carregar");
+            setInstallments((await res.json()) as Installment[]);
         } catch (err: any) {
             toast.error("Erro ao carregar parcelas", { description: err.message });
         } finally {
@@ -73,8 +66,11 @@ export function InstallmentsManager({ saleId, totalValue }: InstallmentsManagerP
 
     const handleSaveSaleValue = async () => {
         const val = parseFloat(saleValueInput.replace(/\D/g, "")) / 100 || 0;
-        const { error } = await supabase.from("sales").update({ total_value: val }).eq("id", saleId);
-        if (error) { toast.error("Erro ao salvar valor", { description: error.message }); return; }
+        const res = await fetch("/api/sales", {
+            method: "PATCH", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: saleId, total_value: val }),
+        });
+        if (!res.ok) { toast.error("Erro ao salvar valor", { description: (await res.json().catch(() => ({}))).error }); return; }
         setSaleValue(val);
         setEditingSaleValue(false);
         toast.success("Valor da venda atualizado!");
@@ -82,20 +78,13 @@ export function InstallmentsManager({ saleId, totalValue }: InstallmentsManagerP
 
     const handleAdd = async () => {
         try {
-            const profile = await AuthService.getProfile();
-            if (!profile?.organization_id) throw new Error("Organização não encontrada.");
-
             const val = parseFloat(amount.replace(/\D/g, "")) / 100 || 0;
 
-            const { error } = await supabase.from("installments").insert({
-                organization_id: profile.organization_id,
-                sale_id: saleId,
-                description: desc || "Parcela",
-                amount: val,
-                due_date: dueDate,
+            const res = await fetch("/api/installments", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sale_id: saleId, description: desc || "Parcela", amount: val, due_date: dueDate }),
             });
-
-            if (error) throw error;
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha");
 
             toast.success("Parcela adicionada!");
             setShowAdd(false);
@@ -110,30 +99,11 @@ export function InstallmentsManager({ saleId, totalValue }: InstallmentsManagerP
 
     const togglePaid = async (inst: Installment) => {
         const newPaid = !inst.paid;
-        const { error } = await supabase
-            .from("installments")
-            .update({ paid: newPaid, paid_at: newPaid ? new Date().toISOString() : null })
-            .eq("id", inst.id);
-
-        if (error) {
-            toast.error("Erro ao atualizar");
-            return;
-        }
-
-        // Atualiza received_value na venda
-        const { data: allInstallments } = await supabase
-            .from("installments")
-            .select("amount, paid")
-            .eq("sale_id", saleId);
-
-        if (allInstallments) {
-            const totalPaid = allInstallments
-                .filter((i: any) => i.paid || (i.id === inst.id && newPaid))
-                .reduce((s: number, i: any) => s + (i.amount || 0), 0);
-
-            await supabase.from("sales").update({ received_value: totalPaid }).eq("id", saleId);
-        }
-
+        const res = await fetch("/api/installments", {
+            method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: inst.id, paid: newPaid }),
+        });
+        if (!res.ok) { toast.error("Erro ao atualizar"); return; }
         fetchInstallments();
         toast.success(newPaid ? "Parcela marcada como paga!" : "Parcela desmarcada");
     };
@@ -148,19 +118,19 @@ export function InstallmentsManager({ saleId, totalValue }: InstallmentsManagerP
     const handleSaveEdit = async () => {
         if (!editingId) return;
         const val = parseFloat(editAmount.replace(/\D/g, "")) / 100 || 0;
-        const { error } = await supabase
-            .from("installments")
-            .update({ description: editDesc || "Parcela", amount: val, due_date: editDueDate })
-            .eq("id", editingId);
-        if (error) { toast.error("Erro ao salvar", { description: error.message }); return; }
+        const res = await fetch("/api/installments", {
+            method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: editingId, description: editDesc || "Parcela", amount: val, due_date: editDueDate }),
+        });
+        if (!res.ok) { toast.error("Erro ao salvar", { description: (await res.json().catch(() => ({}))).error }); return; }
         toast.success("Parcela atualizada!");
         setEditingId(null);
         fetchInstallments();
     };
 
     const handleDelete = async (id: string) => {
-        const { error } = await supabase.from("installments").delete().eq("id", id);
-        if (error) { toast.error("Erro ao excluir", { description: error.message }); return; }
+        const res = await fetch(`/api/installments?id=${id}`, { method: "DELETE" });
+        if (!res.ok) { toast.error("Erro ao excluir", { description: (await res.json().catch(() => ({}))).error }); return; }
         toast.success("Parcela excluída!");
         fetchInstallments();
     };

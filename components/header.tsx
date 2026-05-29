@@ -30,7 +30,6 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { AuthService } from "@/services/authService";
-import { supabase } from "@/lib/supabaseClient";
 import { useRouter, usePathname } from "next/navigation";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -61,11 +60,13 @@ export function Header() {
     useEffect(() => {
         if (!isSysadmin) return;
         setLoadingOrgs(true);
-        supabase.from("organizations").select("id, name").order("name")
-            .then(({ data }) => {
-                setOrgs(data || []);
+        fetch("/api/organizations", { cache: "no-store" })
+            .then((r) => (r.ok ? r.json() : []))
+            .then((data) => {
+                setOrgs((data || []).map((o: any) => ({ id: o.id, name: o.name })));
                 setLoadingOrgs(false);
-            });
+            })
+            .catch(() => setLoadingOrgs(false));
     }, [isSysadmin]);
 
     const getInitials = () => {

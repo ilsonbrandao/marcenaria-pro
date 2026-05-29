@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { useRBAC } from "@/components/rbac-provider";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -43,9 +42,9 @@ export default function KanbanConfigPage() {
     useEffect(() => { if (!loading && !canManage) router.replace("/dashboard"); }, [loading, canManage, router]);
 
     const load = async () => {
-        const { data, error } = await supabase.from("kanban_stages").select("*").order("position");
-        if (error) toast.error(error.message);
-        else setStages(data || []);
+        const res = await fetch("/api/kanban-stages", { cache: "no-store" });
+        if (!res.ok) toast.error((await res.json().catch(() => ({}))).error || "Falha ao carregar");
+        else setStages(await res.json());
     };
 
     useEffect(() => { if (canManage) load(); }, [canManage]);
@@ -67,13 +66,19 @@ export default function KanbanConfigPage() {
         setSaving(true);
         try {
             if (editing) {
-                const { error } = await supabase.from("kanban_stages").update({ name: form.name, color: form.color, is_final: form.is_final }).eq("id", editing.id);
-                if (error) throw error;
+                const res = await fetch("/api/kanban-stages", {
+                    method: "PUT", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: editing.id, name: form.name, color: form.color, is_final: form.is_final }),
+                });
+                if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha");
                 toast.success("Etapa atualizada.");
             } else {
                 const maxPos = stages.filter(s => s.kanban_type === form.kanban_type).length;
-                const { error } = await supabase.from("kanban_stages").insert({ ...form, position: maxPos });
-                if (error) throw error;
+                const res = await fetch("/api/kanban-stages", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ ...form, position: maxPos }),
+                });
+                if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha");
                 toast.success("Etapa criada.");
             }
             setOpen(false);
@@ -87,8 +92,8 @@ export default function KanbanConfigPage() {
 
     const remove = async (id: string) => {
         if (!confirm("Remover esta etapa? Projetos nela serão desvinculados.")) return;
-        const { error } = await supabase.from("kanban_stages").delete().eq("id", id);
-        if (error) toast.error(error.message);
+        const res = await fetch(`/api/kanban-stages?id=${id}`, { method: "DELETE" });
+        if (!res.ok) toast.error((await res.json().catch(() => ({}))).error || "Falha");
         else { toast.success("Etapa removida."); load(); }
     };
 
@@ -101,9 +106,10 @@ export default function KanbanConfigPage() {
         const reordered = [...filtered];
         const [moved] = reordered.splice(fromIdx, 1);
         reordered.splice(toIdx, 0, moved);
-        await Promise.all(
-            reordered.map((s, i) => supabase.from("kanban_stages").update({ position: i }).eq("id", s.id))
-        );
+        await fetch("/api/kanban-stages", {
+            method: "PATCH", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ order: reordered.map((s, i) => ({ id: s.id, position: i })) }),
+        });
         load();
     };
 

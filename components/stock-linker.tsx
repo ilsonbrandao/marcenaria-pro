@@ -1,13 +1,11 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AuthService } from "@/services/authService";
 import { Package, Minus, Plus } from "lucide-react";
 
 type InventoryItem = {
@@ -48,19 +46,15 @@ export function StockLinker({ saleId, projectName }: StockLinkerProps) {
         try {
             setLoading(true);
             const [movRes, invRes] = await Promise.all([
-                supabase
-                    .from("stock_movements")
-                    .select("*, inventory(id, category, brand, name_or_color, thickness)")
-                    .eq("sale_id", saleId)
-                    .order("created_at", { ascending: false }),
-                supabase.from("inventory").select("*").gt("quantity", 0).order("name_or_color"),
+                fetch(`/api/stock-movements?saleId=${saleId}`, { cache: "no-store" }),
+                fetch("/api/inventory", { cache: "no-store" }),
             ]);
+            if (!movRes.ok) throw new Error((await movRes.json().catch(() => ({}))).error || "Falha");
+            if (!invRes.ok) throw new Error((await invRes.json().catch(() => ({}))).error || "Falha");
 
-            if (movRes.error) throw movRes.error;
-            if (invRes.error) throw invRes.error;
-
-            setMovements(movRes.data as StockMovement[]);
-            setInventory(invRes.data as InventoryItem[]);
+            setMovements((await movRes.json()) as StockMovement[]);
+            const inv = (await invRes.json()) as InventoryItem[];
+            setInventory(inv.filter((i) => i.quantity > 0));
         } catch (err: any) {
             toast.error("Erro ao carregar movimentações", { description: err.message });
         } finally {
@@ -74,36 +68,21 @@ export function StockLinker({ saleId, projectName }: StockLinkerProps) {
 
     const handleAddOutput = async () => {
         try {
-            const profile = await AuthService.getProfile();
-            if (!profile?.organization_id) throw new Error("Organização não encontrada.");
-
             const qtyNum = parseFloat(qty) || 0;
             if (qtyNum <= 0) throw new Error("Quantidade inválida.");
 
-            // Verificar estoque disponível
             const item = inventory.find((i) => i.id === selectedItem);
             if (!item) throw new Error("Item não encontrado.");
             if (item.quantity < qtyNum) throw new Error(`Estoque insuficiente. Disponível: ${item.quantity}`);
 
-            // Registrar saída
-            const { error: movError } = await supabase.from("stock_movements").insert({
-                organization_id: profile.organization_id,
-                inventory_id: selectedItem,
-                sale_id: saleId,
-                movement_type: "OUT",
-                quantity: qtyNum,
-                notes: `Saída para projeto: ${projectName}`,
+            const res = await fetch("/api/stock-movements", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    inventory_id: selectedItem, sale_id: saleId, quantity: qtyNum,
+                    notes: `Saída para projeto: ${projectName}`,
+                }),
             });
-
-            if (movError) throw movError;
-
-            // Decrementar estoque
-            const { error: invError } = await supabase
-                .from("inventory")
-                .update({ quantity: item.quantity - qtyNum })
-                .eq("id", selectedItem);
-
-            if (invError) throw invError;
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha");
 
             toast.success("Material vinculado!", { description: `${qtyNum}x ${item.name_or_color} retirado do estoque.` });
             setShowAdd(false);

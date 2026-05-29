@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +12,6 @@ import {
 import {
     Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { AuthService } from "@/services/authService";
 import { Plus, Search, Phone, Mail, MapPin, Pencil, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import { DataPagination } from "@/components/ui/data-pagination";
 import { useRBAC } from "@/components/rbac-provider";
@@ -66,22 +64,14 @@ function ClientHistory({ clientId }: { clientId: string }) {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        Promise.all([
-            supabase
-                .from("budgets")
-                .select("id, budget_number, created_at, status, total_prazo, total_avista")
-                .eq("client_id", clientId)
-                .order("created_at", { ascending: false }),
-            supabase
-                .from("sales")
-                .select("id, created_at, status, total_value")
-                .eq("client_id", clientId)
-                .order("created_at", { ascending: false }),
-        ]).then(([bRes, sRes]) => {
-            setBudgets((bRes.data as Budget[]) || []);
-            setSales((sRes.data as Sale[]) || []);
-            setLoading(false);
-        });
+        fetch(`/api/clients/${clientId}/history`, { cache: "no-store" })
+            .then((r) => (r.ok ? r.json() : { budgets: [], sales: [] }))
+            .then((json) => {
+                setBudgets((json.budgets as Budget[]) || []);
+                setSales((json.sales as Sale[]) || []);
+                setLoading(false);
+            })
+            .catch(() => setLoading(false));
     }, [clientId]);
 
     if (loading) {
@@ -180,9 +170,9 @@ export default function ClientesPage() {
 
     const fetchClients = useCallback(async () => {
         setLoading(true);
-        const { data, error } = await supabase.from("clients").select("*").order("name");
-        if (error) toast.error("Erro ao carregar clientes", { description: error.message });
-        else setClients((data as Client[]) || []);
+        const res = await fetch("/api/clients", { cache: "no-store" });
+        if (!res.ok) toast.error("Erro ao carregar clientes", { description: (await res.json().catch(() => ({}))).error });
+        else setClients((await res.json()) as Client[]);
         setLoading(false);
     }, []);
 
@@ -220,16 +210,18 @@ export default function ClientesPage() {
             };
 
             if (editingClient) {
-                const { error } = await supabase
-                    .from("clients").update(payload).eq("id", editingClient.id).select();
-                if (error) throw error;
+                const res = await fetch("/api/clients", {
+                    method: "PUT", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ ...payload, id: editingClient.id }),
+                });
+                if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha");
                 toast.success("Cliente atualizado!");
             } else {
-                const profile = await AuthService.getProfile();
-                if (!profile?.organization_id) throw new Error("Organização não encontrada.");
-                const { error } = await supabase
-                    .from("clients").insert({ organization_id: profile.organization_id, ...payload }).select();
-                if (error) throw error;
+                const res = await fetch("/api/clients", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha");
                 toast.success("Cliente cadastrado!");
             }
 
@@ -245,8 +237,8 @@ export default function ClientesPage() {
     const handleDelete = async (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
         if (!confirm("Deseja excluir esse cliente?")) return;
-        const { error } = await supabase.from("clients").delete().eq("id", id);
-        if (error) { toast.error("Erro ao excluir", { description: error.message }); return; }
+        const res = await fetch(`/api/clients?id=${id}`, { method: "DELETE" });
+        if (!res.ok) { toast.error("Erro ao excluir", { description: (await res.json().catch(() => ({}))).error }); return; }
         toast.success("Cliente excluído");
         if (expandedId === id) setExpandedId(null);
         fetchClients();

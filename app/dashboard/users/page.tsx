@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRBAC } from "@/components/rbac-provider";
-import { supabase } from "@/lib/supabaseClient";
-import { AuthService } from "@/services/authService";
 import {
     Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from "@/components/ui/table";
@@ -81,10 +79,7 @@ export default function UsersPage() {
 
     const fetchUsers = async () => {
         try {
-            const token = await AuthService.getAccessToken();
-            const res = await fetch("/api/users", {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const res = await fetch("/api/users", { cache: "no-store" });
             if (!res.ok) {
                 const err = await res.json();
                 throw new Error(err.error || "Erro ao buscar usuários");
@@ -97,8 +92,11 @@ export default function UsersPage() {
     };
 
     const fetchOrganizations = async () => {
-        const { data } = await supabase.from('organizations').select('id, name').order('name');
-        if (data) setOrganizations(data);
+        const res = await fetch("/api/organizations", { cache: "no-store" });
+        if (res.ok) {
+            const data = await res.json();
+            setOrganizations((data || []).map((o: any) => ({ id: o.id, name: o.name })));
+        }
     };
 
     const handleOpenCreate = () => {
@@ -147,7 +145,6 @@ export default function UsersPage() {
 
         setFormLoading(true);
         try {
-            const token = await AuthService.getAccessToken();
             const payload = {
                 id: userId,
                 full_name: fullName,
@@ -167,10 +164,7 @@ export default function UsersPage() {
             const method = isEditing ? "PUT" : "POST";
             const res = await fetch("/api/users", {
                 method,
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`
-                },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
             });
 
@@ -197,10 +191,8 @@ export default function UsersPage() {
         if (!userToDelete) return;
         setDeleteLoading(true);
         try {
-            const token = await AuthService.getAccessToken();
             const res = await fetch(`/api/users?id=${userToDelete.id}`, {
                 method: "DELETE",
-                headers: { Authorization: `Bearer ${token}` }
             });
 
             if (!res.ok) {

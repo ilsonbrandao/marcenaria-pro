@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRBAC } from "@/components/rbac-provider";
-import { supabase } from "@/lib/supabaseClient";
 import {
     Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from "@/components/ui/table";
@@ -57,23 +56,9 @@ export default function OrganizationsPage() {
     const fetchOrganizations = async () => {
         setLoading(true);
         try {
-            const { data, error } = await supabase
-                .from("organizations")
-                .select(`
-                    id, 
-                    name, 
-                    cnpj,
-                    phone,
-                    address,
-                    city,
-                    state,
-                    created_at,
-                    profiles(count)
-                `)
-                .order("created_at", { ascending: false });
-
-            if (error) throw error;
-            setOrganizations(data || []);
+            const res = await fetch("/api/organizations", { cache: "no-store" });
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha ao carregar");
+            setOrganizations(await res.json());
         } catch (error: any) {
             toast.error("Erro ao carregar marcenarias", { description: error.message });
         } finally {
@@ -125,17 +110,18 @@ export default function OrganizationsPage() {
             };
 
             if (isEditing && orgId) {
-                const { error } = await supabase
-                    .from("organizations")
-                    .update(payload)
-                    .eq("id", orgId);
-                if (error) throw error;
+                const res = await fetch("/api/organizations", {
+                    method: "PUT", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ ...payload, id: orgId }),
+                });
+                if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha");
                 toast.success("Marcenaria atualizada com sucesso!");
             } else {
-                const { error } = await supabase
-                    .from("organizations")
-                    .insert([payload]);
-                if (error) throw error;
+                const res = await fetch("/api/organizations", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha");
                 toast.success("Marcenaria criada com sucesso!");
             }
 
@@ -154,26 +140,17 @@ export default function OrganizationsPage() {
         setDeleteDialogOpen(true);
 
         // Buscar contagens para mostrar ao usuário antes de confirmar
-        const [usersRes, salesRes] = await Promise.all([
-            supabase.from("profiles").select("id", { count: "exact", head: true }).eq("organization_id", org.id),
-            supabase.from("sales").select("id", { count: "exact", head: true }).eq("organization_id", org.id),
-        ]);
-        setDeleteCounts({
-            users: usersRes.count || 0,
-            sales: salesRes.count || 0,
-        });
+        const res = await fetch(`/api/organizations/${org.id}/counts`, { cache: "no-store" });
+        const data = res.ok ? await res.json() : { users: 0, sales: 0 };
+        setDeleteCounts({ users: data.users || 0, sales: data.sales || 0 });
     };
 
     const confirmDelete = async () => {
         if (!orgToDelete) return;
         setDeleteLoading(true);
         try {
-            const { error } = await supabase
-                .from("organizations")
-                .delete()
-                .eq("id", orgToDelete.id);
-
-            if (error) throw error;
+            const res = await fetch(`/api/organizations?id=${orgToDelete.id}`, { method: "DELETE" });
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha");
             toast.success("Marcenaria excluída com sucesso!");
             setDeleteDialogOpen(false);
             fetchOrganizations();
@@ -265,7 +242,7 @@ export default function OrganizationsPage() {
                                             </TableCell>
                                             <TableCell>
                                                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800">
-                                                    {org.profiles?.[0]?.count || 0} membro(s)
+                                                    {org.member_count || 0} membro(s)
                                                 </span>
                                             </TableCell>
                                             <TableCell className="text-right flex items-center justify-end gap-1">

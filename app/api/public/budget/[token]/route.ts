@@ -1,59 +1,97 @@
 import { NextResponse } from 'next/server';
 import { unstable_noStore as noStore } from 'next/cache';
-import { supabaseAdmin } from '@/lib/supabase-admin';
+import { eq, asc } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { budgets, budgetEnvironments, budgetItems, organizations, profiles } from '@/lib/db/schema';
+import { snakeKeys, snakeRows } from '@/lib/case';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request, { params }: { params: { token: string } }) {
     noStore();
     try {
-        const { data: budget, error } = await supabaseAdmin
-            .from('budgets')
-            .select('id, organization_id, created_by, client_name, client_address, budget_number, payment_type, total_prazo, total_avista, prazo_entry_percent, prazo_installments, avista_discount_percent, avista_entry_percent, observations, status, created_at, updated_at')
-            .eq('public_token', params.token)
-            .single();
+        const [budget] = await db
+            .select({
+                id: budgets.id,
+                organization_id: budgets.organizationId,
+                created_by: budgets.createdBy,
+                client_name: budgets.clientName,
+                client_address: budgets.clientAddress,
+                budget_number: budgets.budgetNumber,
+                payment_type: budgets.paymentType,
+                total_prazo: budgets.totalPrazo,
+                total_avista: budgets.totalAvista,
+                prazo_entry_percent: budgets.prazoEntryPercent,
+                prazo_installments: budgets.prazoInstallments,
+                avista_discount_percent: budgets.avistaDiscountPercent,
+                avista_entry_percent: budgets.avistaEntryPercent,
+                observations: budgets.observations,
+                status: budgets.status,
+                created_at: budgets.createdAt,
+                updated_at: budgets.updatedAt,
+            })
+            .from(budgets)
+            .where(eq(budgets.publicToken, params.token))
+            .limit(1);
 
-        if (error || !budget) {
+        if (!budget) {
             return NextResponse.json({ error: 'Orçamento não encontrado.' }, { status: 404 });
         }
 
-        // Busca dados da organização para exibir no cabeçalho
-        const { data: org } = await supabaseAdmin
-            .from('organizations')
-            .select('name, company_name, cnpj, phone, email, address, owner_name, logo_url, budget_validity_days')
-            .eq('id', (budget as any).organization_id)
-            .single();
+        const [org] = await db
+            .select({
+                name: organizations.name,
+                company_name: organizations.companyName,
+                cnpj: organizations.cnpj,
+                phone: organizations.phone,
+                email: organizations.email,
+                address: organizations.address,
+                owner_name: organizations.ownerName,
+                logo_url: organizations.logoUrl,
+                budget_validity_days: organizations.budgetValidityDays,
+            })
+            .from(organizations)
+            .where(eq(organizations.id, budget.organization_id))
+            .limit(1);
 
-        // Nome do usuário que elaborou o orçamento (responsável)
         let createdByName: string | null = null;
-        if ((budget as any).created_by) {
-            const { data: creator } = await supabaseAdmin
-                .from('profiles')
-                .select('full_name')
-                .eq('id', (budget as any).created_by)
-                .single();
-            createdByName = creator?.full_name || null;
+        if (budget.created_by) {
+            const [creator] = await db.select({ fullName: profiles.fullName })
+                .from(profiles).where(eq(profiles.id, budget.created_by)).limit(1);
+            createdByName = creator?.fullName || null;
         }
 
-        const { data: environments } = await supabaseAdmin
-            .from('budget_environments')
-            .select('*')
-            .eq('budget_id', budget.id)
-            .order('position');
+        const environments = await db.select().from(budgetEnvironments)
+            .where(eq(budgetEnvironments.budgetId, budget.id))
+            .orderBy(asc(budgetEnvironments.position));
 
-        const { data: items } = await supabaseAdmin
-            .from('budget_items')
-            .select('id, environment_id, description, qty, alt_cm, larg_cm, prof_cm, price_prazo_m2, price_avista_m2, value_prazo, value_avista, is_active, position')
-            .eq('budget_id', budget.id)
-            .order('position');
+        const items = await db
+            .select({
+                id: budgetItems.id,
+                environment_id: budgetItems.environmentId,
+                description: budgetItems.description,
+                qty: budgetItems.qty,
+                alt_cm: budgetItems.altCm,
+                larg_cm: budgetItems.largCm,
+                prof_cm: budgetItems.profCm,
+                price_prazo_m2: budgetItems.pricePrazoM2,
+                price_avista_m2: budgetItems.priceAvistaM2,
+                value_prazo: budgetItems.valuePrazo,
+                value_avista: budgetItems.valueAvista,
+                is_active: budgetItems.isActive,
+                position: budgetItems.position,
+            })
+            .from(budgetItems)
+            .where(eq(budgetItems.budgetId, budget.id))
+            .orderBy(asc(budgetItems.position));
 
         return NextResponse.json({
             ...budget,
             org: org || null,
             created_by_name: createdByName,
-            environments: (environments || []).map(env => ({
-                ...env,
-                items: (items || []).filter(i => i.environment_id === env.id),
+            environments: environments.map((env) => ({
+                ...snakeKeys(env),
+                items: items.filter((i) => i.environment_id === env.id),
             })),
         }, {
             headers: {

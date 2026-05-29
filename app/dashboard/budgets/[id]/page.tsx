@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useRBAC } from "@/components/rbac-provider";
 import { toast } from "sonner";
-import { AuthService } from "@/services/authService";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +12,6 @@ import { BudgetEnvironmentEditor } from "@/components/budget-environment-editor"
 import { BudgetPaymentSimulator } from "@/components/budget-payment-simulator";
 import { generateBudgetPDF } from "@/lib/generate-budget-pdf";
 import { ArrowLeft, FileText, Share2, LockOpen, Copy, ShieldCheck, Clock, Send, MessageCircle } from "lucide-react";
-import { supabase } from "@/lib/supabaseClient";
 
 interface Budget {
     id: string;
@@ -67,10 +65,8 @@ export default function BudgetDetailPage() {
         if (!rbacLoading && isCarpenter) router.replace("/dashboard");
     }, [rbacLoading, isCarpenter, router]);
 
-    const authHeader = async () => {
-        const tok = await AuthService.getAccessToken();
-        return { Authorization: `Bearer ${tok}` };
-    };
+    // Sessão vai por cookie (Auth.js); sem Bearer token.
+    const authHeader = async (): Promise<Record<string, string>> => ({});
 
     const load = useCallback(async () => {
         try {
@@ -93,10 +89,9 @@ export default function BudgetDetailPage() {
 
     // carrega dados da org para o PDF
     useEffect(() => {
-        supabase.from('organizations')
-            .select('name, company_name, cnpj, phone, email, address, owner_name, logo_url, budget_validity_days')
-            .single()
-            .then(({ data }) => { if (data) setOrgData(data); });
+        fetch('/api/settings', { cache: 'no-store' })
+            .then(r => r.ok ? r.json() : null)
+            .then((data) => { if (data) setOrgData(data); });
     }, []);
 
     const patch = async (updates: Partial<Budget>): Promise<boolean> => {

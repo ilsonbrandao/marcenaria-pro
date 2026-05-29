@@ -29,7 +29,7 @@ export default function LoginPage() {
             let msg = err.message || "Ocorreu um erro ao processar a autenticação.";
 
             if (msg.includes("Failed to fetch")) {
-                msg = "Falha de conexão: O navegador não conseguiu acessar o banco. Verifique se salvou o arquivo .env com a URL correta do Supabase, ou desative os escudos (adblockers) do seu navegador.";
+                msg = "Falha de conexão: não foi possível acessar o servidor. Verifique sua conexão e tente novamente.";
             } else if (msg.includes("Invalid login credentials")) {
                 msg = "Usuário ou senha incorretos. Tente novamente.";
             } else if (msg.includes("User already registered")) {

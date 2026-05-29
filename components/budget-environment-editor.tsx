@@ -6,8 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { AuthService } from "@/services/authService";
-import { supabase } from "@/lib/supabaseClient";
 
 interface PriceTableItem {
     id: string;
@@ -97,17 +95,12 @@ export function BudgetEnvironmentEditor({ budgetId, token, readOnly = false, avi
                 const data = await res.json();
                 setEnvironments(data.environments || []);
             } else if (budgetId) {
-                const tok = await AuthService.getAccessToken();
-                const res = await fetch(`/api/budgets/${budgetId}`, {
-                    headers: { Authorization: `Bearer ${tok}` },
-                });
+                const res = await fetch(`/api/budgets/${budgetId}`, { cache: 'no-store' });
                 const data = await res.json();
                 setEnvironments(data.environments || []);
 
                 // carrega tabela de preços
-                const pr = await fetch('/api/price-table', {
-                    headers: { Authorization: `Bearer ${tok}` },
-                });
+                const pr = await fetch('/api/price-table', { cache: 'no-store' });
                 const prData = await pr.json();
                 setPriceItems(prData || []);
             }
@@ -121,8 +114,7 @@ export function BudgetEnvironmentEditor({ budgetId, token, readOnly = false, avi
     useEffect(() => { load(); }, [load]);
 
     const authHeaders = async () => {
-        const tok = await AuthService.getAccessToken();
-        return { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" };
+        return { "Content-Type": "application/json" };
     };
 
     // ── Ambiente ──────────────────────────────────────────

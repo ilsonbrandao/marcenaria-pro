@@ -2,8 +2,6 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
-import { AuthService } from "@/services/authService";
 import { useRBAC } from "@/components/rbac-provider";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -212,23 +210,19 @@ export default function ProjectPage() {
 
     // ── Carregamento ─────────────────────────────────────────────────────────
     const loadSale = useCallback(async () => {
-        const { data, error } = await supabase
-            .from("sales")
-            .select("id, client_name, status, delivery_date, notes, carpenter_id, seller_id")
-            .eq("id", id).single();
-        if (error) { toast.error("Projeto não encontrado."); router.back(); return; }
+        const res = await fetch(`/api/sales?id=${id}`, { cache: "no-store" });
+        if (!res.ok) { toast.error("Projeto não encontrado."); router.back(); return; }
+        const data = await res.json();
         setSale(data); setNotes(data.notes || "");
     }, [id]);
 
     const loadMessages = useCallback(async () => {
-        const token = await AuthService.getAccessToken();
-        const res = await fetch(`/api/sales/${id}/messages`, { headers: { Authorization: `Bearer ${token}` } });
+        const res = await fetch(`/api/sales/${id}/messages`, { cache: "no-store" });
         if (res.ok) setMessages(await res.json());
     }, [id]);
 
     const loadFiles = useCallback(async () => {
-        const token = await AuthService.getAccessToken();
-        const res = await fetch(`/api/sales/${id}/files`, { headers: { Authorization: `Bearer ${token}` } });
+        const res = await fetch(`/api/sales/${id}/files`, { cache: "no-store" });
         if (res.ok) setFiles(await res.json());
     }, [id]);
 
@@ -239,24 +233,14 @@ export default function ProjectPage() {
 
     useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-    useEffect(() => {
-        if (!id) return;
-        const ch = supabase.channel(`msgs-${id}`)
-            .on("postgres_changes", { event: "INSERT", schema: "public", table: "project_messages", filter: `sale_id=eq.${id}` },
-                () => loadMessages())
-            .subscribe();
-        return () => { supabase.removeChannel(ch); };
-    }, [id]);
-
     // ── Ações ────────────────────────────────────────────────────────────────
     const handleSendMessage = async () => {
         if (!newMsg.trim() || sending) return;
         setSending(true);
         try {
-            const token = await AuthService.getAccessToken();
             const res = await fetch(`/api/sales/${id}/messages`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ message: newMsg }),
             });
             if (!res.ok) throw new Error((await res.json()).error);
@@ -268,10 +252,9 @@ export default function ProjectPage() {
     const handleSaveNotes = async () => {
         setSavingNotes(true);
         try {
-            const token = await AuthService.getAccessToken();
             const res = await fetch(`/api/sales/${id}/notes`, {
                 method: "PATCH",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ notes }),
             });
             if (!res.ok) throw new Error((await res.json()).error);
@@ -286,11 +269,10 @@ export default function ProjectPage() {
         if (file.size > 50 * 1024 * 1024) { toast.error("Arquivo muito grande (máx 50MB)."); return; }
         setUploading(true);
         try {
-            const token = await AuthService.getAccessToken();
             const form = new FormData();
             form.append("file", file);
             const res = await fetch(`/api/sales/${id}/files`, {
-                method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form,
+                method: "POST", body: form,
             });
             if (!res.ok) throw new Error((await res.json()).error);
             toast.success(`"${file.name}" enviado!`); loadFiles();
@@ -301,9 +283,8 @@ export default function ProjectPage() {
     const handleDeleteFile = async (fileId: string, fileName: string) => {
         if (!confirm(`Excluir "${fileName}"?`)) return;
         try {
-            const token = await AuthService.getAccessToken();
             const res = await fetch(`/api/sales/${id}/files?fileId=${fileId}`, {
-                method: "DELETE", headers: { Authorization: `Bearer ${token}` },
+                method: "DELETE",
             });
             if (!res.ok) throw new Error((await res.json()).error);
             toast.success("Arquivo removido."); loadFiles();
@@ -314,10 +295,9 @@ export default function ProjectPage() {
         if (!reportMsg.trim()) return;
         setReportLoading(true);
         try {
-            const token = await AuthService.getAccessToken();
             const res = await fetch(`/api/sales/${id}/report`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ message: reportMsg }),
             });
             if (!res.ok) throw new Error((await res.json()).error);

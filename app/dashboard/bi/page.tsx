@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { useRBAC } from "@/components/rbac-provider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -41,12 +40,12 @@ export default function BIPage() {
     useEffect(() => {
         if (loading || !canViewReports) return;
         (async () => {
-            const [{ data: s }, { data: e }] = await Promise.all([
-                supabase.from("sales").select("id,client_name,total_value,received_value,raw_material_cost,freight_cost,meals_cost,commission_seller_percent,commission_carpenter_percent,rt_architect_percent,status"),
-                supabase.from("expenses").select("amount,expense_type"),
-            ]);
-            setProjects(s || []);
-            setExpenses(e || []);
+            const res = await fetch("/api/bi", { cache: "no-store" });
+            if (res.ok) {
+                const json = await res.json();
+                setProjects(json.projects || []);
+                setExpenses(json.expenses || []);
+            }
             setLoadingData(false);
         })();
     }, [loading, canViewReports]);
