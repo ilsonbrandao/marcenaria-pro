@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { toast } from "sonner";
 import {
     Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -48,25 +47,11 @@ export default function ReportsPage() {
     const fetchData = async () => {
         try {
             setLoading(true);
-            const [salesRes, expRes] = await Promise.all([
-                supabase
-                    .from("sales")
-                    .select("*")
-                    .gte("created_at", dateFrom)
-                    .lte("created_at", dateTo + "T23:59:59")
-                    .order("created_at", { ascending: false }),
-                supabase.from("expenses").select("sale_id, amount").eq("expense_type", "Direct"),
-            ]);
-
-            if (salesRes.error) throw salesRes.error;
-            setSales(salesRes.data as SaleReport[]);
-
-            // Agrupar despesas diretas por sale_id
-            const map: ExpenseMap = {};
-            (expRes.data || []).forEach((e: any) => {
-                if (e.sale_id) map[e.sale_id] = (map[e.sale_id] || 0) + (e.amount || 0);
-            });
-            setExpenses(map);
+            const res = await fetch(`/api/reports?from=${dateFrom}&to=${dateTo}`, { cache: "no-store" });
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha ao carregar");
+            const json = await res.json();
+            setSales(json.sales as SaleReport[]);
+            setExpenses(json.expenses as ExpenseMap);
         } catch (err: any) {
             toast.error("Erro ao carregar relatórios", { description: err.message });
         } finally {

@@ -57,6 +57,10 @@ export async function PATCH(req: Request) {
     if (body.avatar_url !== undefined) updates.avatarUrl = body.avatar_url;
     if (body.color_theme !== undefined) updates.colorTheme = body.color_theme;
     if (body.phone !== undefined) updates.phone = body.phone;
+    if (body.address !== undefined) updates.address = body.address;
+    if (body.city !== undefined) updates.city = body.city;
+    if (body.state !== undefined) updates.state = body.state;
+    if (body.cpf !== undefined) updates.cpf = body.cpf;
 
     if (Object.keys(updates).length === 0) {
         return NextResponse.json({ error: 'Nada para atualizar' }, { status: 400 });

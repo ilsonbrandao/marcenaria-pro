@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,15 +26,11 @@ export default function ProfilePage() {
 
     useEffect(() => {
         if (!profile?.id) return;
-        supabase.auth.getUser().then(({ data: { user } }) => {
-            if (user) setEmail(user.email || "");
-        });
-        supabase.from("profiles")
-            .select("full_name, phone, address")
-            .eq("id", profile.id)
-            .single()
-            .then(({ data }) => {
+        fetch("/api/me", { cache: "no-store" })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => {
                 if (!data) return;
+                setEmail(data.email || "");
                 setFullName(data.full_name || "");
                 setPhone(data.phone || "");
                 setAddress(data.address || "");
@@ -46,11 +41,12 @@ export default function ProfilePage() {
         if (!profile?.id) return;
         setLoading(true);
         try {
-            const { error } = await supabase
-                .from("profiles")
-                .update({ phone, address })
-                .eq("id", profile.id);
-            if (error) throw error;
+            const res = await fetch("/api/me", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ phone, address }),
+            });
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha ao salvar");
             setSaved(true);
             toast.success("Perfil salvo!");
             setTimeout(() => setSaved(false), 2500);
