@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +12,6 @@ import {
 import {
     Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { AuthService } from "@/services/authService";
 import { Plus, Ruler, Phone, Mail, Pencil, Trash2, Percent, Search } from "lucide-react";
 import { DataPagination } from "@/components/ui/data-pagination";
 
@@ -50,23 +48,11 @@ export default function ArchitectsPage() {
     const fetchData = async () => {
         try {
             setLoading(true);
-            const [archRes, salesRes] = await Promise.all([
-                supabase.from("architects").select("*").order("name"),
-                supabase.from("sales").select("architect_id, total_value, rt_architect_percent"),
-            ]);
-
-            if (archRes.error) throw archRes.error;
-            setArchitects(archRes.data as Architect[]);
-
-            // Calcula indicações e RT a receber por arquiteto
-            const data: Record<string, { count: number; totalRT: number }> = {};
-            (salesRes.data || []).forEach((s: any) => {
-                if (!s.architect_id) return;
-                if (!data[s.architect_id]) data[s.architect_id] = { count: 0, totalRT: 0 };
-                data[s.architect_id].count += 1;
-                data[s.architect_id].totalRT += (s.total_value * (s.rt_architect_percent || 0)) / 100;
-            });
-            setSalesData(data);
+            const res = await fetch("/api/architects", { cache: "no-store" });
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha ao carregar");
+            const json = await res.json();
+            setArchitects(json.architects as Architect[]);
+            setSalesData(json.salesData || {});
         } catch (err: any) {
             toast.error("Erro ao carregar arquitetos", { description: err.message });
         } finally {
@@ -94,9 +80,6 @@ export default function ArchitectsPage() {
     const handleSave = async () => {
         try {
             setFormLoading(true);
-            const profile = await AuthService.getProfile();
-            if (!profile?.organization_id) throw new Error("Organização não encontrada.");
-
             const payload = {
                 name: name.trim(),
                 phone: phone.trim(),
@@ -106,15 +89,18 @@ export default function ArchitectsPage() {
             };
 
             if (editing) {
-                const { error } = await supabase.from("architects").update(payload).eq("id", editing.id);
-                if (error) throw error;
+                const res = await fetch("/api/architects", {
+                    method: "PUT", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ ...payload, id: editing.id }),
+                });
+                if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha");
                 toast.success("Arquiteto atualizado!");
             } else {
-                const { error } = await supabase.from("architects").insert({
-                    ...payload,
-                    organization_id: profile.organization_id,
+                const res = await fetch("/api/architects", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
                 });
-                if (error) throw error;
+                if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha");
                 toast.success("Arquiteto cadastrado!");
             }
             setDialogOpen(false);
@@ -129,8 +115,8 @@ export default function ArchitectsPage() {
 
     const handleDelete = async (id: string) => {
         if (!confirm("Deseja excluir este arquiteto?")) return;
-        const { error } = await supabase.from("architects").delete().eq("id", id);
-        if (error) { toast.error("Erro ao excluir"); return; }
+        const res = await fetch(`/api/architects?id=${id}`, { method: "DELETE" });
+        if (!res.ok) { toast.error("Erro ao excluir"); return; }
         toast.success("Arquiteto excluído");
         fetchData();
     };

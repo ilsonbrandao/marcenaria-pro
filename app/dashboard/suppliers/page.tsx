@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { useRBAC } from "@/components/rbac-provider";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -44,9 +43,9 @@ export default function SuppliersPage() {
     }, [loading, canManageSuppliers, router]);
 
     const load = async () => {
-        const { data, error } = await supabase.from("suppliers").select("*").order("name");
-        if (error) toast.error(error.message);
-        else setSuppliers(data || []);
+        const res = await fetch("/api/suppliers", { cache: "no-store" });
+        if (!res.ok) toast.error((await res.json().catch(() => ({}))).error || "Falha ao carregar");
+        else setSuppliers((await res.json()) || []);
     };
 
     useEffect(() => { if (canManageSuppliers) load(); }, [canManageSuppliers]);
@@ -59,12 +58,18 @@ export default function SuppliersPage() {
         setSaving(true);
         try {
             if (editing) {
-                const { error } = await supabase.from("suppliers").update(form).eq("id", editing.id);
-                if (error) throw error;
+                const res = await fetch("/api/suppliers", {
+                    method: "PUT", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ ...form, id: editing.id }),
+                });
+                if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha ao salvar");
                 toast.success("Fornecedor atualizado.");
             } else {
-                const { error } = await supabase.from("suppliers").insert(form);
-                if (error) throw error;
+                const res = await fetch("/api/suppliers", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(form),
+                });
+                if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha ao salvar");
                 toast.success("Fornecedor cadastrado.");
             }
             setOpen(false);
@@ -77,8 +82,11 @@ export default function SuppliersPage() {
     };
 
     const toggleActive = async (s: Supplier) => {
-        const { error } = await supabase.from("suppliers").update({ is_active: !s.is_active }).eq("id", s.id);
-        if (error) toast.error(error.message);
+        const res = await fetch("/api/suppliers", {
+            method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: s.id, is_active: !s.is_active }),
+        });
+        if (!res.ok) toast.error((await res.json().catch(() => ({}))).error || "Falha");
         else { toast.success(s.is_active ? "Fornecedor desativado." : "Fornecedor ativado."); load(); }
     };
 
