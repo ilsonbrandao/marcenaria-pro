@@ -1,41 +1,31 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase-admin';
+import { and, eq, desc } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { projectFiles, profiles } from '@/lib/db/schema';
+import { getCaller } from '@/lib/auth-helpers';
+import { uploadObject, deleteObject, signedDownloadUrl } from '@/lib/spaces';
 
-async function getCallerProfile(req: Request) {
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) return null;
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user } } = await supabaseAdmin.auth.getUser(token);
-    if (!user) return null;
-    const { data: profile } = await supabaseAdmin
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-    return profile;
-}
-
-/** GET /api/sales/[saleId]/files — lista arquivos do projeto */
 export async function GET(req: Request, { params }: { params: { saleId: string } }) {
     try {
-        const caller = await getCallerProfile(req);
+        const caller = await getCaller();
         if (!caller) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
 
-        const { data, error } = await supabaseAdmin
-            .from('project_files')
-            .select('*, profiles(full_name)')
-            .eq('sale_id', params.saleId)
-            .order('created_at', { ascending: false });
+        const rows = await db
+            .select({
+                id: projectFiles.id, file_name: projectFiles.fileName, file_path: projectFiles.filePath,
+                file_type: projectFiles.fileType, created_at: projectFiles.createdAt,
+                p_full_name: profiles.fullName,
+            })
+            .from(projectFiles)
+            .leftJoin(profiles, eq(profiles.id, projectFiles.uploadedBy))
+            .where(eq(projectFiles.saleId, params.saleId))
+            .orderBy(desc(projectFiles.createdAt));
 
-        if (error) throw error;
-
-        // Gera URLs assinadas (válidas por 1h) para cada arquivo
-        const files = await Promise.all((data || []).map(async (f) => {
-            const { data: signedUrl } = await supabaseAdmin.storage
-                .from('project-files')
-                .createSignedUrl(f.file_path, 3600);
-            return { ...f, signed_url: signedUrl?.signedUrl || null };
-        }));
+        const files = await Promise.all(rows.map(async (f) => ({
+            id: f.id, file_name: f.file_name, file_path: f.file_path, file_type: f.file_type,
+            created_at: f.created_at, profiles: f.p_full_name ? { full_name: f.p_full_name } : null,
+            signed_url: await signedDownloadUrl(f.file_path, 3600).catch(() => null),
+        })));
 
         return NextResponse.json(files);
     } catch (error: any) {
@@ -43,10 +33,9 @@ export async function GET(req: Request, { params }: { params: { saleId: string }
     }
 }
 
-/** POST /api/sales/[saleId]/files — faz upload de arquivo */
 export async function POST(req: Request, { params }: { params: { saleId: string } }) {
     try {
-        const caller = await getCallerProfile(req);
+        const caller = await getCaller();
         if (!caller) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
 
         const formData = await req.formData();
@@ -55,61 +44,48 @@ export async function POST(req: Request, { params }: { params: { saleId: string 
 
         const ext = file.name.split('.').pop()?.toLowerCase() || 'bin';
         const safeName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-        const filePath = `${caller.organization_id || 'global'}/${params.saleId}/${safeName}`;
+        const key = `project-files/${caller.organizationId || 'global'}/${params.saleId}/${safeName}`;
 
-        const arrayBuffer = await file.arrayBuffer();
-        const { error: storageErr } = await supabaseAdmin.storage
-            .from('project-files')
-            .upload(filePath, arrayBuffer, { contentType: file.type, upsert: false });
-        if (storageErr) throw storageErr;
+        const bytes = Buffer.from(await file.arrayBuffer());
+        await uploadObject(key, bytes, file.type, false);
 
         const fileType = file.type.startsWith('image/') ? 'image' : ext === 'pdf' ? 'pdf' : 'other';
-        const { data, error } = await supabaseAdmin.from('project_files').insert({
-            organization_id: caller.organization_id,
-            sale_id: params.saleId,
-            file_name: file.name,
-            file_path: filePath,
-            file_type: fileType,
-            uploaded_by: caller.id,
-        }).select('*, profiles(full_name)').single();
-        if (error) throw error;
+        const [inserted] = await db.insert(projectFiles).values({
+            organizationId: caller.organizationId!,
+            saleId: params.saleId,
+            fileName: file.name,
+            filePath: key,
+            fileType,
+            uploadedBy: caller.id,
+        }).returning({ id: projectFiles.id, fileName: projectFiles.fileName, filePath: projectFiles.filePath, fileType: projectFiles.fileType, createdAt: projectFiles.createdAt });
 
-        const { data: signedUrl } = await supabaseAdmin.storage
-            .from('project-files').createSignedUrl(filePath, 3600);
-
-        return NextResponse.json({ ...data, signed_url: signedUrl?.signedUrl || null });
+        return NextResponse.json({
+            id: inserted.id, file_name: inserted.fileName, file_path: inserted.filePath,
+            file_type: inserted.fileType, created_at: inserted.createdAt,
+            profiles: { full_name: caller.fullName },
+            signed_url: await signedDownloadUrl(key, 3600).catch(() => null),
+        });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
 
-/** DELETE /api/sales/[saleId]/files?fileId=uuid — remove arquivo */
 export async function DELETE(req: Request, { params }: { params: { saleId: string } }) {
     try {
-        const caller = await getCallerProfile(req);
+        const caller = await getCaller();
         if (!caller || !['sysadmin', 'owner', 'office'].includes(caller.role)) {
             return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
         }
 
-        const url = new URL(req.url);
-        const fileId = url.searchParams.get('fileId');
+        const fileId = new URL(req.url).searchParams.get('fileId');
         if (!fileId) return NextResponse.json({ error: 'fileId é obrigatório.' }, { status: 400 });
 
-        // Busca o path para remover do storage
-        const { data: file, error: fetchErr } = await supabaseAdmin
-            .from('project_files')
-            .select('file_path')
-            .eq('id', fileId)
-            .single();
+        const [file] = await db.select({ filePath: projectFiles.filePath })
+            .from(projectFiles).where(eq(projectFiles.id, fileId)).limit(1);
+        if (!file) return NextResponse.json({ error: 'Arquivo não encontrado.' }, { status: 404 });
 
-        if (fetchErr || !file) return NextResponse.json({ error: 'Arquivo não encontrado.' }, { status: 404 });
-
-        // Remove do storage
-        await supabaseAdmin.storage.from('project-files').remove([file.file_path]);
-
-        // Remove do banco
-        const { error } = await supabaseAdmin.from('project_files').delete().eq('id', fileId);
-        if (error) throw error;
+        await deleteObject(file.filePath).catch(() => {});
+        await db.delete(projectFiles).where(eq(projectFiles.id, fileId));
 
         return NextResponse.json({ message: 'Arquivo removido.' });
     } catch (error: any) {
