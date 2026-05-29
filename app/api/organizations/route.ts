@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { eq, asc } from 'drizzle-orm';
+import { eq, asc, count } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { organizations } from '@/lib/db/schema';
+import { organizations, profiles } from '@/lib/db/schema';
 import { getCaller } from '@/lib/auth-helpers';
 import { snakeKeys, snakeRows } from '@/lib/case';
 
@@ -34,7 +34,14 @@ export async function GET(req: Request) {
         const rows = caller.role === 'sysadmin'
             ? await db.select().from(organizations).orderBy(asc(organizations.name))
             : await db.select().from(organizations).where(eq(organizations.id, caller.organizationId!));
-        return NextResponse.json(snakeRows(rows));
+
+        const counts = await db
+            .select({ orgId: profiles.organizationId, value: count() })
+            .from(profiles)
+            .groupBy(profiles.organizationId);
+        const countMap = new Map(counts.map((c) => [c.orgId, c.value]));
+
+        return NextResponse.json(snakeRows(rows).map((o) => ({ ...o, member_count: countMap.get(o.id) ?? 0 })));
     } catch (e: any) {
         return NextResponse.json({ error: e.message }, { status: 500 });
     }

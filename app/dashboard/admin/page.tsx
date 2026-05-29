@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRBAC } from "@/components/rbac-provider";
-import { supabase } from "@/lib/supabaseClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Building2, Users, Activity, AlertCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -31,34 +30,13 @@ export default function AdminDashboardPage() {
 
     const fetchStats = async () => {
         try {
-            // Conta Organizations
-            const { count: orgCount, error: orgError } = await supabase
-                .from("organizations")
-                .select('*', { count: 'exact', head: true });
-
-            if (orgError) throw orgError;
-
-            // Pega criadas nos ultimos 7 dias
-            const lastWeek = new Date();
-            lastWeek.setDate(lastWeek.getDate() - 7);
-            const { count: recentOrgCount, error: recentError } = await supabase
-                .from("organizations")
-                .select('*', { count: 'exact', head: true })
-                .gte('created_at', lastWeek.toISOString());
-
-            if (recentError) throw recentError;
-
-            // Conta Perfis
-            const { count: userCount, error: userError } = await supabase
-                .from("profiles")
-                .select('*', { count: 'exact', head: true });
-
-            if (userError) throw userError;
-
+            const res = await fetch("/api/admin/stats", { cache: "no-store" });
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha ao carregar");
+            const data = await res.json();
             setStats({
-                totalOrgs: orgCount || 0,
-                totalUsers: userCount || 0,
-                recentOrgs: recentOrgCount || 0
+                totalOrgs: data.totalOrgs || 0,
+                totalUsers: data.totalUsers || 0,
+                recentOrgs: data.recentOrgs || 0,
             });
         } catch (error: any) {
             toast.error("Erro ao carregar métricas", { description: error.message });
