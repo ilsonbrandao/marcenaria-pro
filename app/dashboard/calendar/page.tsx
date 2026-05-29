@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { useRBAC } from "@/components/rbac-provider";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,14 +57,9 @@ export default function CalendarPage() {
     const load = async () => {
         const firstDay = new Date(current.year, current.month, 1).toISOString().slice(0, 10);
         const lastDay  = new Date(current.year, current.month + 1, 0).toISOString().slice(0, 10);
-        const { data, error } = await supabase
-            .from("calendar_events")
-            .select("*, profiles(full_name), sales(client_name)")
-            .gte("event_date", firstDay)
-            .lte("event_date", lastDay)
-            .order("event_date");
-        if (error) toast.error(error.message);
-        else setEvents((data as any) || []);
+        const res = await fetch(`/api/calendar?from=${firstDay}&to=${lastDay}`, { cache: "no-store" });
+        if (!res.ok) toast.error((await res.json().catch(() => ({}))).error || "Falha ao carregar");
+        else setEvents((await res.json()) || []);
     };
 
     useEffect(() => { if (!loading) load(); }, [loading, current]);
@@ -96,12 +90,18 @@ export default function CalendarPage() {
         try {
             const payload = { ...form, event_time: form.event_time || null };
             if (editing) {
-                const { error } = await supabase.from("calendar_events").update(payload).eq("id", editing.id);
-                if (error) throw error;
+                const res = await fetch("/api/calendar", {
+                    method: "PUT", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ ...payload, id: editing.id }),
+                });
+                if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha");
                 toast.success("Evento atualizado.");
             } else {
-                const { error } = await supabase.from("calendar_events").insert(payload);
-                if (error) throw error;
+                const res = await fetch("/api/calendar", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Falha");
                 toast.success("Evento criado.");
             }
             setOpen(false);
@@ -115,8 +115,8 @@ export default function CalendarPage() {
 
     const remove = async (id: string) => {
         if (!confirm("Remover este evento?")) return;
-        const { error } = await supabase.from("calendar_events").delete().eq("id", id);
-        if (error) toast.error(error.message);
+        const res = await fetch(`/api/calendar?id=${id}`, { method: "DELETE" });
+        if (!res.ok) toast.error((await res.json().catch(() => ({}))).error || "Falha");
         else { toast.success("Evento removido."); load(); }
     };
 
