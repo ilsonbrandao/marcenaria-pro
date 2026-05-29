@@ -44,7 +44,8 @@ export async function POST(req: Request, { params }: { params: { saleId: string 
 
         const ext = file.name.split('.').pop()?.toLowerCase() || 'bin';
         const safeName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-        const key = `project-files/${caller.organizationId || 'global'}/${params.saleId}/${safeName}`;
+        // key = file_path (sem prefixo), consistente com os dados migrados do Supabase
+        const key = `${caller.organizationId || 'global'}/${params.saleId}/${safeName}`;
 
         const bytes = Buffer.from(await file.arrayBuffer());
         await uploadObject(key, bytes, file.type, false);
