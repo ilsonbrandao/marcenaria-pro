@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabaseClient';
+import { signIn, signOut } from 'next-auth/react';
 
 export type UserRole = 'sysadmin' | 'owner' | 'office' | 'seller' | 'carpenter';
 
@@ -16,66 +16,58 @@ export interface UserProfile {
     phone?: string;
     notes?: string;
     is_active?: boolean;
+    email?: string;
 }
 
 export const AuthService = {
     async login(email: string, password: string) {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        return data;
+        const res = await signIn('credentials', { email, password, redirect: false });
+        if (!res || res.error) {
+            throw new Error('Invalid login credentials');
+        }
+        return res;
     },
 
     async logout() {
-        const { error } = await supabase.auth.signOut();
-        if (error) throw error;
+        await signOut({ redirect: false });
     },
 
     async getCurrentUserProfile(): Promise<UserProfile | null> {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return null;
-
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', user.id)
-            .single();
-
-        if (profile) return profile as UserProfile;
-        return this._fallbackProfile(user);
-    },
-
-    _fallbackProfile(user: any, orgId?: string): UserProfile {
-        return {
-            id: user.id,
-            organization_id: orgId || '',
-            role: 'carpenter',
-            full_name: user.email?.split('@')[0] || 'Usuário',
-        };
-    },
-
-    async getAccessToken() {
-        const { data: { session } } = await supabase.auth.getSession();
-        return session?.access_token || null;
+        const res = await fetch('/api/me', { cache: 'no-store' });
+        if (!res.ok) return null;
+        return (await res.json()) as UserProfile;
     },
 
     async getProfile(): Promise<UserProfile | null> {
         return this.getCurrentUserProfile();
     },
 
+    // Deprecado: a sessão agora vai por cookie httpOnly (Auth.js), não por Bearer token.
+    async getAccessToken(): Promise<string | null> {
+        return null;
+    },
+
     async changePassword(newPassword: string) {
-        const { error } = await supabase.auth.updateUser({ password: newPassword });
-        if (error) throw error;
+        const res = await fetch('/api/me/password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: newPassword }),
+        });
+        if (!res.ok) {
+            const e = await res.json().catch(() => ({}));
+            throw new Error(e.error || 'Falha ao alterar a senha.');
+        }
     },
 
     async updateProfile(updates: Partial<Pick<UserProfile, 'full_name' | 'avatar_url' | 'color_theme' | 'phone'>>) {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('Não autenticado');
-
-        const { error } = await supabase
-            .from('profiles')
-            .update(updates)
-            .eq('id', user.id);
-
-        if (error) throw error;
+        const res = await fetch('/api/me', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates),
+        });
+        if (!res.ok) {
+            const e = await res.json().catch(() => ({}));
+            throw new Error(e.error || 'Falha ao atualizar o perfil.');
+        }
     },
 };

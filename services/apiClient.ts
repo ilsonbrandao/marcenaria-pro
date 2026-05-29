@@ -1,16 +1,9 @@
-import { AuthService } from './authService';
-
 export const ApiClient = {
     async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-        const token = await AuthService.getAccessToken();
-
         const headers = new Headers(options.headers || {});
         headers.set('Content-Type', 'application/json');
 
-        if (token) {
-            headers.set('Authorization', `Bearer ${token}`);
-        }
-
+        // A sessão (Auth.js) é enviada automaticamente via cookie httpOnly.
         const response = await fetch(endpoint, {
             ...options,
             headers,

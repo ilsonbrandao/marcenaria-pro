@@ -1,8 +1,8 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { useSession } from "next-auth/react";
 import { AuthService, UserProfile } from "@/services/authService";
-import { supabase } from "@/lib/supabaseClient";
 
 interface ImpersonatedOrg {
     id: string;
@@ -59,6 +59,7 @@ const RBACContext = createContext<RBACContextType>({
 });
 
 export function RBACProvider({ children }: { children: React.ReactNode }) {
+    const { status } = useSession();
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [loading, setLoading] = useState(true);
     const [impersonatedOrg, setImpersonatedOrg] = useState<ImpersonatedOrg | null>(null);
@@ -66,41 +67,23 @@ export function RBACProvider({ children }: { children: React.ReactNode }) {
     const loadProfile = useCallback(async () => {
         try {
             const p = await AuthService.getCurrentUserProfile();
-            if (p) {
-                setProfile(p);
-            } else {
-                const { data: { user } } = await supabase.auth.getUser();
-                if (user) {
-                    setProfile({
-                        id: user.id,
-                        organization_id: user.user_metadata?.organization_id || "",
-                        role: "carpenter",
-                        full_name: user.user_metadata?.full_name || user.email?.split("@")[0] || "Usuário",
-                    });
-                }
-            }
+            setProfile(p);
         } catch {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-                setProfile({
-                    id: user.id,
-                    organization_id: "",
-                    role: "carpenter",
-                    full_name: user.email?.split("@")[0] || "Usuário",
-                });
-            }
+            setProfile(null);
         } finally {
             setLoading(false);
         }
     }, []);
 
     useEffect(() => {
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+        if (status === "loading") return;
+        if (status === "authenticated") {
             loadProfile();
-        });
-        loadProfile();
-        return () => subscription.unsubscribe();
-    }, [loadProfile]);
+        } else {
+            setProfile(null);
+            setLoading(false);
+        }
+    }, [status, loadProfile]);
 
     const role = profile?.role || "carpenter";
 
