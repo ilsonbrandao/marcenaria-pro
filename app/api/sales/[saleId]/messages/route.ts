@@ -1,56 +1,70 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase-admin';
+import { eq, asc } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { projectMessages, profiles } from '@/lib/db/schema';
+import { getCaller } from '@/lib/auth-helpers';
+import { snakeKeys } from '@/lib/case';
 
-async function getCallerProfile(req: Request) {
-    const token = req.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return null;
-    const { data: { user } } = await supabaseAdmin.auth.getUser(token);
-    if (!user) return null;
-    const { data } = await supabaseAdmin.from('profiles').select('*').eq('id', user.id).single();
-    return data;
+function reshape(row: any) {
+    const { p_id, p_full_name, p_avatar_url, p_role, ...msg } = row;
+    return {
+        ...snakeKeys(msg),
+        profiles: p_id ? { id: p_id, full_name: p_full_name, avatar_url: p_avatar_url, role: p_role } : null,
+    };
 }
 
-/** GET /api/sales/[saleId]/messages */
+const baseSelect = {
+    id: projectMessages.id,
+    organizationId: projectMessages.organizationId,
+    saleId: projectMessages.saleId,
+    profileId: projectMessages.profileId,
+    message: projectMessages.message,
+    createdAt: projectMessages.createdAt,
+    p_id: profiles.id,
+    p_full_name: profiles.fullName,
+    p_avatar_url: profiles.avatarUrl,
+    p_role: profiles.role,
+};
+
 export async function GET(req: Request, { params }: { params: { saleId: string } }) {
     try {
-        const caller = await getCallerProfile(req);
+        const caller = await getCaller();
         if (!caller) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
 
-        const { data, error } = await supabaseAdmin
-            .from('project_messages')
-            .select('*, profiles(id, full_name, avatar_url, role)')
-            .eq('sale_id', params.saleId)
-            .order('created_at', { ascending: true });
+        const rows = await db.select(baseSelect)
+            .from(projectMessages)
+            .leftJoin(profiles, eq(profiles.id, projectMessages.profileId))
+            .where(eq(projectMessages.saleId, params.saleId))
+            .orderBy(asc(projectMessages.createdAt));
 
-        if (error) throw error;
-        return NextResponse.json(data || []);
+        return NextResponse.json(rows.map(reshape));
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
 
-/** POST /api/sales/[saleId]/messages */
 export async function POST(req: Request, { params }: { params: { saleId: string } }) {
     try {
-        const caller = await getCallerProfile(req);
+        const caller = await getCaller();
         if (!caller) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
 
         const { message } = await req.json();
         if (!message?.trim()) return NextResponse.json({ error: 'Mensagem vazia.' }, { status: 400 });
 
-        const { data, error } = await supabaseAdmin
-            .from('project_messages')
-            .insert({
-                organization_id: caller.organization_id,
-                sale_id: params.saleId,
-                profile_id: caller.id,
-                message: message.trim(),
-            })
-            .select('*, profiles(id, full_name, avatar_url, role)')
-            .single();
+        const [inserted] = await db.insert(projectMessages).values({
+            organizationId: caller.organizationId!,
+            saleId: params.saleId,
+            profileId: caller.id,
+            message: message.trim(),
+        }).returning({ id: projectMessages.id });
 
-        if (error) throw error;
-        return NextResponse.json(data);
+        const [row] = await db.select(baseSelect)
+            .from(projectMessages)
+            .leftJoin(profiles, eq(profiles.id, projectMessages.profileId))
+            .where(eq(projectMessages.id, inserted.id))
+            .limit(1);
+
+        return NextResponse.json(reshape(row));
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

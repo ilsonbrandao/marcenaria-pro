@@ -1,55 +1,65 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase-admin';
+import { eq } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { organizations } from '@/lib/db/schema';
+import { getCaller } from '@/lib/auth-helpers';
+import { snakeKeys } from '@/lib/case';
 
-async function getCallerProfile(req: Request) {
-    const token = req.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return null;
-    const { data: { user } } = await supabaseAdmin.auth.getUser(token);
-    if (!user) return null;
-    const { data } = await supabaseAdmin.from('profiles').select('*').eq('id', user.id).single();
-    return data;
-}
+export async function GET() {
+    const caller = await getCaller();
+    if (!caller) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
 
-export async function GET(req: Request) {
-    const profile = await getCallerProfile(req);
-    if (!profile) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
+    const [data] = await db
+        .select({
+            name: organizations.name,
+            company_name: organizations.companyName,
+            cnpj: organizations.cnpj,
+            state_registration: organizations.stateRegistration,
+            phone: organizations.phone,
+            email: organizations.email,
+            address: organizations.address,
+            owner_name: organizations.ownerName,
+            owner_cpf: organizations.ownerCpf,
+            owner_phone: organizations.ownerPhone,
+            logo_url: organizations.logoUrl,
+            budget_validity_days: organizations.budgetValidityDays,
+            default_payment_type: organizations.defaultPaymentType,
+            default_prazo_entry_percent: organizations.defaultPrazoEntryPercent,
+            default_prazo_installments: organizations.defaultPrazoInstallments,
+            default_avista_discount_percent: organizations.defaultAvistaDiscountPercent,
+            default_avista_entry_percent: organizations.defaultAvistaEntryPercent,
+            default_budget_observations: organizations.defaultBudgetObservations,
+        })
+        .from(organizations)
+        .where(eq(organizations.id, caller.organizationId!))
+        .limit(1);
 
-    const { data, error } = await supabaseAdmin
-        .from('organizations')
-        .select('name, company_name, cnpj, state_registration, phone, email, address, owner_name, owner_cpf, owner_phone, logo_url, budget_validity_days, default_payment_type, default_prazo_entry_percent, default_prazo_installments, default_avista_discount_percent, default_avista_entry_percent, default_budget_observations')
-        .eq('id', profile.organization_id)
-        .single();
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json(data);
+    return NextResponse.json(data ?? null);
 }
 
 export async function PUT(req: Request) {
-    const profile = await getCallerProfile(req);
-    if (!profile) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
-    if (!['owner', 'office', 'sysadmin'].includes(profile.role)) {
+    const caller = await getCaller();
+    if (!caller) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
+    if (!['owner', 'office', 'sysadmin'].includes(caller.role)) {
         return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
     }
 
     const body = await req.json();
-
-    // Campos permitidos
-    const allowed = ['name', 'company_name', 'cnpj', 'state_registration', 'phone', 'email', 'address',
-        'owner_name', 'owner_cpf', 'owner_phone', 'budget_validity_days',
-        'default_payment_type', 'default_prazo_entry_percent',
-        'default_prazo_installments', 'default_avista_discount_percent',
-        'default_avista_entry_percent', 'default_budget_observations'];
-
-    const updates: any = {};
-    for (const key of allowed) {
-        if (body[key] !== undefined) updates[key] = body[key];
+    const map: Record<string, string> = {
+        name: 'name', company_name: 'companyName', cnpj: 'cnpj', state_registration: 'stateRegistration',
+        phone: 'phone', email: 'email', address: 'address',
+        owner_name: 'ownerName', owner_cpf: 'ownerCpf', owner_phone: 'ownerPhone',
+        budget_validity_days: 'budgetValidityDays',
+        default_payment_type: 'defaultPaymentType', default_prazo_entry_percent: 'defaultPrazoEntryPercent',
+        default_prazo_installments: 'defaultPrazoInstallments', default_avista_discount_percent: 'defaultAvistaDiscountPercent',
+        default_avista_entry_percent: 'defaultAvistaEntryPercent', default_budget_observations: 'defaultBudgetObservations',
+    };
+    const numeric = new Set(['default_prazo_entry_percent', 'default_avista_discount_percent', 'default_avista_entry_percent']);
+    const updates: Record<string, any> = {};
+    for (const key of Object.keys(map)) {
+        if (body[key] !== undefined) updates[map[key]] = numeric.has(key) ? String(body[key]) : body[key];
     }
 
-    const { error } = await supabaseAdmin
-        .from('organizations')
-        .update(updates)
-        .eq('id', profile.organization_id);
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    await db.update(organizations).set(updates).where(eq(organizations.id, caller.organizationId!));
     return NextResponse.json({ ok: true });
 }

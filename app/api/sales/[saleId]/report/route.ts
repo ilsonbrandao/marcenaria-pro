@@ -1,23 +1,11 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase-admin';
-
-async function getCallerProfile(req: Request) {
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) return null;
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user } } = await supabaseAdmin.auth.getUser(token);
-    if (!user) return null;
-    const { data: profile } = await supabaseAdmin
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-    return profile;
-}
+import { db } from '@/lib/db';
+import { expenses } from '@/lib/db/schema';
+import { getCaller } from '@/lib/auth-helpers';
 
 export async function POST(req: Request, { params }: { params: { saleId: string } }) {
     try {
-        const caller = await getCallerProfile(req);
+        const caller = await getCaller();
         if (!caller) {
             return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
         }
@@ -27,15 +15,13 @@ export async function POST(req: Request, { params }: { params: { saleId: string 
             return NextResponse.json({ error: 'Mensagem não pode ser vazia.' }, { status: 400 });
         }
 
-        const { error } = await supabaseAdmin.from('expenses').insert({
-            organization_id: caller.organization_id,
-            sale_id: params.saleId,
-            description: `⚠️ Relato de ${caller.full_name || 'marceneiro'}: ${message.trim()}`,
-            amount: 0,
-            expense_type: 'Direct',
+        await db.insert(expenses).values({
+            organizationId: caller.organizationId!,
+            saleId: params.saleId,
+            description: `⚠️ Relato de ${caller.fullName || 'marceneiro'}: ${message.trim()}`,
+            amount: '0',
+            expenseType: 'Direct',
         });
-
-        if (error) throw error;
 
         return NextResponse.json({ message: 'Relato registrado com sucesso.' });
     } catch (error: any) {

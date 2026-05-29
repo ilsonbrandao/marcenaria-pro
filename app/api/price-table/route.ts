@@ -1,28 +1,22 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase-admin';
+import { eq, asc, count } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { priceTableItems } from '@/lib/db/schema';
+import { getCaller } from '@/lib/auth-helpers';
+import { snakeRows, snakeKeys } from '@/lib/case';
 
-async function getCallerProfile(req: Request) {
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) return null;
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user } } = await supabaseAdmin.auth.getUser(token);
-    if (!user) return null;
-    const { data: profile } = await supabaseAdmin.from('profiles').select('*').eq('id', user.id).single();
-    return profile;
-}
-
-export async function GET(req: Request) {
+export async function GET() {
     try {
-        const caller = await getCallerProfile(req);
+        const caller = await getCaller();
         if (!caller) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
 
-        const query = caller.role === 'sysadmin'
-            ? supabaseAdmin.from('price_table_items').select('*').order('position')
-            : supabaseAdmin.from('price_table_items').select('*').eq('organization_id', caller.organization_id).order('position');
+        const rows = caller.role === 'sysadmin'
+            ? await db.select().from(priceTableItems).orderBy(asc(priceTableItems.position))
+            : await db.select().from(priceTableItems)
+                .where(eq(priceTableItems.organizationId, caller.organizationId!))
+                .orderBy(asc(priceTableItems.position));
 
-        const { data, error } = await query;
-        if (error) throw error;
-        return NextResponse.json(data);
+        return NextResponse.json(snakeRows(rows));
     } catch (e: any) {
         return NextResponse.json({ error: e.message }, { status: 500 });
     }
@@ -30,34 +24,28 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
     try {
-        const caller = await getCallerProfile(req);
+        const caller = await getCaller();
         if (!caller || !['sysadmin', 'owner', 'office'].includes(caller.role)) {
             return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
         }
 
-        const body = await req.json();
-        const { name, price_prazo, price_avista, is_active } = body;
+        const { name, price_prazo, price_avista, is_active } = await req.json();
         if (!name?.trim()) return NextResponse.json({ error: 'Nome é obrigatório.' }, { status: 400 });
 
-        const orgId = caller.organization_id;
+        const orgId = caller.organizationId!;
+        const [{ value: position }] = await db.select({ value: count() })
+            .from(priceTableItems).where(eq(priceTableItems.organizationId, orgId));
 
-        // posição = próximo número
-        const { count } = await supabaseAdmin
-            .from('price_table_items')
-            .select('*', { count: 'exact', head: true })
-            .eq('organization_id', orgId);
-
-        const { data, error } = await supabaseAdmin.from('price_table_items').insert({
-            organization_id: orgId,
+        const [data] = await db.insert(priceTableItems).values({
+            organizationId: orgId,
             name: name.trim(),
-            price_prazo: price_prazo || 0,
-            price_avista: price_avista || 0,
-            is_active: is_active !== false,
-            position: count ?? 0,
-        }).select().single();
+            pricePrazo: String(price_prazo || 0),
+            priceAvista: String(price_avista || 0),
+            isActive: is_active !== false,
+            position: position ?? 0,
+        }).returning();
 
-        if (error) throw error;
-        return NextResponse.json(data, { status: 201 });
+        return NextResponse.json(snakeKeys(data), { status: 201 });
     } catch (e: any) {
         return NextResponse.json({ error: e.message }, { status: 500 });
     }
