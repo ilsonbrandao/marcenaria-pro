@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { useRBAC } from "@/components/rbac-provider";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,32 +59,21 @@ export default function CommissionsPage() {
 
     const load = async () => {
         setLoadingData(true);
-        let query = supabase
-            .from("commissions")
-            .select("*, profiles(full_name, role), sales(client_name, total_value)")
-            .order("created_at", { ascending: false });
-
-        if (statusFilter !== "all") query = query.eq("status", statusFilter);
-        if (typeFilter !== "all") query = query.eq("commission_type", typeFilter);
-        if (monthFilter !== "all") {
-            const [y, m] = monthFilter.split("-");
-            const from = `${y}-${m}-01`;
-            const lastDay = new Date(parseInt(y), parseInt(m), 0).getDate();
-            const to = `${y}-${m}-${lastDay}T23:59:59`;
-            query = query.gte("created_at", from).lte("created_at", to);
-        }
-
-        const { data, error } = await query;
-        if (error) toast.error(error.message);
-        else setCommissions((data as any) || []);
+        const qs = new URLSearchParams({ status: statusFilter, type: typeFilter, month: monthFilter });
+        const res = await fetch(`/api/commissions?${qs}`, { cache: "no-store" });
+        if (!res.ok) toast.error((await res.json().catch(() => ({}))).error || "Falha ao carregar");
+        else setCommissions((await res.json()) || []);
         setLoadingData(false);
     };
 
     useEffect(() => { if (!loading && canViewCommissions) load(); }, [loading, canViewCommissions, statusFilter, typeFilter, monthFilter]);
 
     const markPaid = async (id: string) => {
-        const { error } = await supabase.from("commissions").update({ status: "paid", paid_at: new Date().toISOString() }).eq("id", id);
-        if (error) toast.error(error.message);
+        const res = await fetch("/api/commissions", {
+            method: "PATCH", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id }),
+        });
+        if (!res.ok) toast.error((await res.json().catch(() => ({}))).error || "Falha");
         else { toast.success("Comissão marcada como paga."); load(); }
     };
 
