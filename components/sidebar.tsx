@@ -121,7 +121,7 @@ function OrgBrand() {
                 <div className="h-12 w-12 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center shadow-sm">
                     <ShieldAlert className="h-6 w-6 text-purple-600 dark:text-purple-400" />
                 </div>
-                <p className="text-sm font-bold text-slate-800 dark:text-slate-100 text-center leading-tight">Marcenaria Pro</p>
+                <p className="text-sm font-bold text-slate-800 dark:text-slate-100 text-center leading-tight">Fresa</p>
                 <p className="text-[10px] text-slate-400">Plataforma</p>
             </div>
         );
@@ -233,7 +233,7 @@ export function Sidebar({ className }: { className?: string }) {
             <div className="mt-3 space-y-3">
                 {!loading && <ProfileCard />}
                 <div className="text-center pb-1">
-                    <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-600">Marcenaria Pro © 2026</p>
+                    <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-600">Fresa © 2026</p>
                     <p className="text-[9px] text-slate-300 dark:text-slate-700 font-mono">v{version}</p>
                 </div>
             </div>
@@ -257,7 +257,7 @@ export function SidebarMobileMenu() {
             <div className="mt-3 space-y-3">
                 {!loading && <ProfileCard />}
                 <div className="text-center pb-1">
-                    <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-600">Marcenaria Pro © 2026</p>
+                    <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-600">Fresa © 2026</p>
                     <p className="text-[9px] text-slate-300 dark:text-zinc-700 font-mono">v{version}</p>
                 </div>
             </div>

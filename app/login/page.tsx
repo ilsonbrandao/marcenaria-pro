@@ -51,7 +51,7 @@ export default function LoginPage() {
                             <Lock className="h-6 w-6 text-indigo-600" />
                         </div>
                     </div>
-                    <CardTitle className="text-2xl font-bold text-center">Marcenaria Pro</CardTitle>
+                    <CardTitle className="text-2xl font-bold text-center">Fresa</CardTitle>
                     <CardDescription className="text-center">
                         Acesse o sistema com suas credenciais
                     </CardDescription>

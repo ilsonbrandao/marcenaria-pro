@@ -30,7 +30,7 @@ export function generateContractPDF(data: ContractData) {
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(22);
     doc.setFont("helvetica", "bold");
-    doc.text(data.orgName || "Marcenaria Pro", 15, 18);
+    doc.text(data.orgName || "Sua Marcenaria", 15, 18);
 
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
@@ -130,7 +130,7 @@ export function generateContractPDF(data: ContractData) {
     // Footer
     doc.setFontSize(8);
     doc.setTextColor(180, 180, 180);
-    doc.text("Documento gerado automaticamente pelo sistema Marcenaria Pro", 15, 285);
+    doc.text("Documento gerado automaticamente pelo sistema Fresa", 15, 285);
 
     // Salvar
     const safeFilename = data.clientName.replace(/[^a-zA-Z0-9]/g, "_");

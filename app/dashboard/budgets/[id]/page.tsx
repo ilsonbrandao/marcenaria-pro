@@ -56,7 +56,7 @@ export default function BudgetDetailPage() {
         name: string; company_name?: string; cnpj?: string;
         phone?: string; email?: string; address?: string; owner_name?: string;
         logo_url?: string; budget_validity_days?: number;
-    }>({ name: "Marcenaria Pro" });
+    }>({ name: "Sua Marcenaria" });
     const [selectedPayment, setSelectedPayment] = useState<'prazo' | 'avista' | null>(null);
 
     const obsRef = useRef<ReturnType<typeof setTimeout> | null>(null);

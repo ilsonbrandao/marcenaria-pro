@@ -25,7 +25,7 @@ export default function App() {
                 <Stack.Screen
                     name="Dashboard"
                     component={CarpenterDashboard}
-                    options={{ title: 'Marcenaria Pro - Marceneiro' }}
+                    options={{ title: 'Fresa - Marceneiro' }}
                 />
                 <Stack.Screen
                     name="ProjectDetails"

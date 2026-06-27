@@ -402,7 +402,7 @@ export default function SettingsPage() {
                         M
                     </div>
                     <div className="space-y-0.5">
-                        <p className="font-bold text-slate-800 dark:text-slate-100 text-sm">Marcenaria Pro</p>
+                        <p className="font-bold text-slate-800 dark:text-slate-100 text-sm">Fresa</p>
                         <p className="text-xs text-slate-500">Sistema de gestão para marcenarias e lojas de planejados</p>
                         <p className="text-xs text-slate-400 pt-1">
                             Desenvolvido por <span className="font-semibold text-slate-600 dark:text-slate-300">Ilson Brandão</span>

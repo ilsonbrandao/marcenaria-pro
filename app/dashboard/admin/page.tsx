@@ -58,7 +58,7 @@ export default function AdminDashboardPage() {
                     Visão Geral da Plataforma
                 </h1>
                 <p className="text-slate-500 mt-2">
-                    Acompanhe o crescimento e volume de clientes e usuários da Marcenaria Pro SaaS.
+                    Acompanhe o crescimento e volume de clientes e usuários da Fresa SaaS.
                 </p>
             </div>
 

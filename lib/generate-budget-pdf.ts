@@ -458,7 +458,7 @@ export async function generateBudgetPDF(
     doc.setFontSize(6.5);
     doc.setTextColor(180, 180, 185);
     doc.text(
-        `Documento gerado em ${new Date().toLocaleDateString('pt-BR')} pelo sistema Marcenaria Pro`,
+        `Documento gerado em ${new Date().toLocaleDateString('pt-BR')} pelo sistema Fresa`,
         W / 2, H - 7, { align: "center" }
     );
 

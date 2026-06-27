@@ -414,7 +414,7 @@ export default function PublicBudgetPage() {
                 )}
 
                 <p className="text-center text-[10px] text-slate-300 dark:text-slate-700 print:hidden">
-                    Orçamento gerado pelo sistema Marcenaria Pro
+                    Orçamento gerado pelo sistema Fresa
                 </p>
             </div>
 

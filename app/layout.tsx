@@ -8,7 +8,7 @@ import { AuthSessionProvider } from "@/components/session-provider";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-    title: "ERP Marcenaria Pro",
+    title: "Fresa — Gestão para Marcenarias",
     description: "Sistema Multi-tenant para Gestão de Marcenarias",
 };
 
