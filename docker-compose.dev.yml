@@ -1,0 +1,33 @@
+# docker-compose.dev.yml — Postgres local de desenvolvimento (Fresa)
+#
+# Espelha o banco de produção do Coolify: mesma imagem, mesma versão.
+# Elimina o túnel SSH do dia a dia e o risco de escrever em dados reais.
+#
+# Uso:
+#   docker compose -f docker-compose.dev.yml up -d      # sobe o banco
+#   npm run db:push                                     # (opcional) reconcilia schema
+#   docker compose -f docker-compose.dev.yml down       # para o banco
+#
+# Porta de host 5435 (ilumie usa 5432, sicap 5433, folium 5434). O túnel SSH temporário
+# do dump de prod usa outra porta livre (5440). Ver C:\Users\ilson\proj\ilumie\docs\arquitetura-infra.md §2 e §4.
+services:
+  fresa-db:
+    image: pgvector/pgvector:pg17     # idêntico ao Coolify (produção)
+    container_name: fresa-db-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: marcenaria_user  # mesmos nomes de prod -> restore sem conflito de owner
+      POSTGRES_DB: marcenaria
+      POSTGRES_PASSWORD: dev_local     # só local, nunca produção
+    ports:
+      - "5435:5432"
+    volumes:
+      - fresa_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marcenaria_user -d marcenaria"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  fresa_pgdata: {}

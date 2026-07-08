@@ -27,6 +27,13 @@ yarn-error.log*
 .env.*
 !.env.example
 
+# secrets / credenciais (NUNCA versionar)
+*.secret.md
+docs/acessos.secret.md
+backups/
+*.dump
+*.sql
+
 # vercel
 .vercel
 
