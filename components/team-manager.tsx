@@ -68,7 +68,15 @@ export function TeamManager() {
 
             if (!res.ok) throw new Error(data.error || "Erro desconhecido ao convidar.");
 
-            toast.success("Usuário criado!", { description: data.temp_password ? `Senha temporária: ${data.temp_password}` : `Repasse o acesso a ${inviteEmail}.` });
+            if (data.setup_url) {
+                await navigator.clipboard.writeText(data.setup_url).catch(() => {});
+                toast.success("Usuário criado!", {
+                    description: `Link de definição de senha copiado. Envie a ${inviteEmail} — vale ${data.expires_in_hours}h e só funciona uma vez.`,
+                    duration: 10000,
+                });
+            } else {
+                toast.success("Usuário criado!", { description: `Repasse o acesso a ${inviteEmail}.` });
+            }
             setInviteEmail("");
             setInviteName("");
             setInviteRole("carpenter");

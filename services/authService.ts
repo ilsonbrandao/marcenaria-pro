@@ -42,16 +42,11 @@ export const AuthService = {
         return this.getCurrentUserProfile();
     },
 
-    // Deprecado: a sessão agora vai por cookie httpOnly (Auth.js), não por Bearer token.
-    async getAccessToken(): Promise<string | null> {
-        return null;
-    },
-
-    async changePassword(newPassword: string) {
+    async changePassword(currentPassword: string, newPassword: string) {
         const res = await fetch('/api/me/password', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password: newPassword }),
+            body: JSON.stringify({ currentPassword, password: newPassword }),
         });
         if (!res.ok) {
             const e = await res.json().catch(() => ({}));

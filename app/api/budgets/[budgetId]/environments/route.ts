@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { eq, count } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { budgetEnvironments } from '@/lib/db/schema';
 import { getCaller } from '@/lib/auth-helpers';
+import { ownsBudget } from '@/lib/authz';
 import { snakeKeys } from '@/lib/case';
 
 export async function POST(req: Request, { params }: { params: { budgetId: string } }) {
@@ -15,6 +17,10 @@ export async function POST(req: Request, { params }: { params: { budgetId: strin
         const { name } = await req.json();
         if (!name?.trim()) return NextResponse.json({ error: 'Nome é obrigatório.' }, { status: 400 });
 
+        if (!(await ownsBudget(caller, params.budgetId))) {
+            return NextResponse.json({ error: 'Orçamento não encontrado.' }, { status: 404 });
+        }
+
         const [{ value: position }] = await db.select({ value: count() })
             .from(budgetEnvironments).where(eq(budgetEnvironments.budgetId, params.budgetId));
 
@@ -26,6 +32,6 @@ export async function POST(req: Request, { params }: { params: { budgetId: strin
 
         return NextResponse.json({ ...snakeKeys(data), items: [] }, { status: 201 });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }

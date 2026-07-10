@@ -41,10 +41,8 @@ export default function PriceTablePage() {
         if (!loading && !canManage) router.replace("/dashboard");
     }, [loading, canManage, router]);
 
-    const headers = async () => {
-        const tok = await AuthService.getAccessToken();
-        return { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" };
-    };
+    // A sessão vai por cookie httpOnly (Auth.js); não há header a enviar.
+    const headers = async (): Promise<Record<string, string>> => ({ "Content-Type": "application/json" });
 
     const load = async () => {
         const h = await headers();

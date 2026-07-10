@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
-import { eq } from 'drizzle-orm';
+import { apiError } from '@/lib/api-error';
+import { and, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { sales, commissions } from '@/lib/db/schema';
 import { getCaller } from '@/lib/auth-helpers';
+import { scopedTo } from '@/lib/authz';
 
 export async function POST(req: Request, { params }: { params: { saleId: string } }) {
     try {
@@ -31,11 +33,16 @@ export async function POST(req: Request, { params }: { params: { saleId: string 
         const gross_margin_percent = total_value > 0 ? (gross_profit / total_value) * 100 : 0;
 
         const [saleData] = await db.select({ organizationId: sales.organizationId })
-            .from(sales).where(eq(sales.id, params.saleId)).limit(1);
-        const orgId = saleData?.organizationId;
+            .from(sales)
+            .where(scopedTo(caller, sales.organizationId, eq(sales.id, params.saleId)))
+            .limit(1);
+        if (!saleData) {
+            return NextResponse.json({ error: 'Não encontrado.' }, { status: 404 });
+        }
+        const orgId = saleData.organizationId;
 
         await db.update(sales).set({ status: 'Concluído', receivedValue: String(received_value) })
-            .where(eq(sales.id, params.saleId));
+            .where(scopedTo(caller, sales.organizationId, eq(sales.id, params.saleId)));
 
         const commissionsToInsert: any[] = [];
         if (seller_id && commission_seller_percent > 0) {
@@ -54,7 +61,10 @@ export async function POST(req: Request, { params }: { params: { saleId: string 
         }
 
         if (commissionsToInsert.length > 0) {
-            await db.delete(commissions).where(eq(commissions.saleId, params.saleId));
+            await db.delete(commissions).where(and(
+                eq(commissions.saleId, params.saleId),
+                eq(commissions.organizationId, orgId!),
+            ));
             await db.insert(commissions).values(commissionsToInsert);
         }
 
@@ -67,6 +77,6 @@ export async function POST(req: Request, { params }: { params: { saleId: string 
             commissions_created: commissionsToInsert.length,
         });
     } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return apiError(error);
     }
 }

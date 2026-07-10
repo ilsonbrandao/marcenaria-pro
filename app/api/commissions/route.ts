@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { and, eq, gte, lte, desc } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { commissions, profiles, sales } from '@/lib/db/schema';
@@ -63,7 +64,7 @@ export async function GET(req: Request) {
         }));
         return NextResponse.json(data);
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -82,6 +83,6 @@ export async function PATCH(req: Request) {
         await db.update(commissions).set({ status: 'paid', paidAt: new Date().toISOString() }).where(cond);
         return NextResponse.json({ ok: true });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }

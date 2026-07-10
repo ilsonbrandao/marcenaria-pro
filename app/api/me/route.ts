@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server';
 import { eq } from 'drizzle-orm';
-import { auth } from '@/auth';
 import { db } from '@/lib/db';
 import { profiles, users } from '@/lib/db/schema';
+import { getCaller } from '@/lib/auth-helpers';
 
 // Perfil completo do usuário logado (consumido pelo RBACProvider no client).
+// Usa `getCaller()` (e não `auth()`) para que uma sessão revogada — troca de
+// senha, usuário desativado — seja rejeitada aqui também.
 export async function GET() {
-    const session = await auth();
-    if (!session?.user?.id) {
+    const caller = await getCaller();
+    if (!caller) {
         return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
     }
 
@@ -30,15 +32,15 @@ export async function GET() {
         })
         .from(profiles)
         .leftJoin(users, eq(users.id, profiles.id))
-        .where(eq(profiles.id, session.user.id))
+        .where(eq(profiles.id, caller.id))
         .limit(1);
 
     if (!profile) {
         return NextResponse.json({
-            id: session.user.id,
-            organization_id: session.user.organizationId,
-            role: session.user.role,
-            full_name: session.user.fullName,
+            id: caller.id,
+            organization_id: caller.organizationId,
+            role: caller.role,
+            full_name: caller.fullName,
         });
     }
 
@@ -46,8 +48,8 @@ export async function GET() {
 }
 
 export async function PATCH(req: Request) {
-    const session = await auth();
-    if (!session?.user?.id) {
+    const caller = await getCaller();
+    if (!caller) {
         return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
     }
 
@@ -66,6 +68,6 @@ export async function PATCH(req: Request) {
         return NextResponse.json({ error: 'Nada para atualizar' }, { status: 400 });
     }
 
-    await db.update(profiles).set(updates).where(eq(profiles.id, session.user.id));
+    await db.update(profiles).set(updates).where(eq(profiles.id, caller.id));
     return NextResponse.json({ ok: true });
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { and, eq, asc } from 'drizzle-orm';
-import bcrypt from 'bcryptjs';
+import { apiError } from '@/lib/api-error';
+import { and, eq, asc, sql } from 'drizzle-orm';
+import { hashPassword } from '@/lib/password';
 import { db } from '@/lib/db';
 import { profiles, users, organizations } from '@/lib/db/schema';
 import { getCaller } from '@/lib/auth-helpers';
@@ -39,7 +40,7 @@ export async function GET() {
         const data = rows.map(({ org_name, ...p }) => ({ ...p, organizations: { name: org_name } }));
         return NextResponse.json(data);
     } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return apiError(error);
     }
 }
 
@@ -71,7 +72,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Este e-mail já está cadastrado.' }, { status: 400 });
         }
 
-        const passwordHash = await bcrypt.hash(password, 10);
+        const passwordHash = await hashPassword(password);
         const [newUser] = await db.insert(users).values({
             email: normalizedEmail,
             passwordHash,
@@ -99,7 +100,7 @@ export async function POST(req: Request) {
 
         return NextResponse.json({ message: 'Usuário criado com sucesso', id: newUser.id }, { status: 201 });
     } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return apiError(error);
     }
 }
 
@@ -143,13 +144,17 @@ export async function PUT(req: Request) {
         await db.update(profiles).set(updateData).where(eq(profiles.id, id));
 
         if (password && password.trim() !== '') {
-            const passwordHash = await bcrypt.hash(password, 10);
+            const passwordHash = await hashPassword(password);
             await db.update(users).set({ passwordHash }).where(eq(users.id, id));
+            // Senha redefinida por um admin: derruba as sessões abertas do usuário.
+            await db.update(profiles)
+                .set({ tokenVersion: sql`${profiles.tokenVersion} + 1` })
+                .where(eq(profiles.id, id));
         }
 
         return NextResponse.json({ message: 'Usuário atualizado com sucesso' });
     } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return apiError(error);
     }
 }
 
@@ -178,6 +183,6 @@ export async function DELETE(req: Request) {
         await db.delete(users).where(eq(users.id, id));
         return NextResponse.json({ message: 'Usuário removido com sucesso' });
     } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return apiError(error);
     }
 }

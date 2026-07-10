@@ -30,6 +30,9 @@ yarn-error.log*
 # secrets / credenciais (NUNCA versionar)
 *.secret.md
 docs/acessos.secret.md
+docs/marcenaria-pro-deploy-coolify.md
+# config por máquina: acumula comandos permitidos, que podem conter credenciais
+.claude/settings.local.json
 backups/
 *.dump
 *.sql
@@ -38,7 +41,8 @@ backups/
 .vercel
 
 # build logs
-build_out*.log
+*.log
+out.txt
 
 # typescript
 *.tsbuildinfo

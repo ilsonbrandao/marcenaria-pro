@@ -1,15 +1,19 @@
 import { NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { and, eq, asc } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { installments, sales } from '@/lib/db/schema';
-import { getCaller } from '@/lib/auth-helpers';
+import { getCaller, type Caller } from '@/lib/auth-helpers';
+import { scopedTo, ownsSale } from '@/lib/authz';
 
 // Recalcula received_value da venda = soma das parcelas pagas.
-async function recomputeReceived(saleId: string) {
+async function recomputeReceived(caller: Caller, saleId: string) {
     const rows = await db.select({ amount: installments.amount, paid: installments.paid })
-        .from(installments).where(eq(installments.saleId, saleId));
+        .from(installments)
+        .where(scopedTo(caller, installments.organizationId, eq(installments.saleId, saleId)));
     const totalPaid = rows.filter((i) => i.paid).reduce((s, i) => s + Number(i.amount || 0), 0);
-    await db.update(sales).set({ receivedValue: String(totalPaid) }).where(eq(sales.id, saleId));
+    await db.update(sales).set({ receivedValue: String(totalPaid) })
+        .where(scopedTo(caller, sales.organizationId, eq(sales.id, saleId)));
 }
 
 export async function GET(req: Request) {
@@ -20,13 +24,14 @@ export async function GET(req: Request) {
         if (!saleId) return NextResponse.json({ error: 'saleId é obrigatório.' }, { status: 400 });
 
         const rows = await db.select().from(installments)
-            .where(eq(installments.saleId, saleId)).orderBy(asc(installments.dueDate));
+            .where(scopedTo(caller, installments.organizationId, eq(installments.saleId, saleId)))
+            .orderBy(asc(installments.dueDate));
         return NextResponse.json(rows.map((r) => ({
             id: r.id, sale_id: r.saleId, description: r.description, amount: Number(r.amount),
             due_date: r.dueDate, paid: r.paid, paid_at: r.paidAt,
         })));
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -36,6 +41,10 @@ export async function POST(req: Request) {
         if (!caller || caller.role === 'carpenter') return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
         const b = await req.json();
 
+        if (!b.sale_id || !(await ownsSale(caller, b.sale_id))) {
+            return NextResponse.json({ error: 'Venda não encontrada.' }, { status: 404 });
+        }
+
         await db.insert(installments).values({
             organizationId: caller.organizationId!,
             saleId: b.sale_id,
@@ -43,10 +52,10 @@ export async function POST(req: Request) {
             amount: String(b.amount || 0),
             dueDate: b.due_date,
         });
-        await recomputeReceived(b.sale_id);
+        await recomputeReceived(caller, b.sale_id);
         return NextResponse.json({ ok: true }, { status: 201 });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -66,11 +75,14 @@ export async function PUT(req: Request) {
             updates.paidAt = b.paid ? new Date().toISOString() : null;
         }
 
-        const [row] = await db.update(installments).set(updates).where(eq(installments.id, b.id)).returning({ saleId: installments.saleId });
-        if (row) await recomputeReceived(row.saleId!);
+        const [row] = await db.update(installments).set(updates)
+            .where(scopedTo(caller, installments.organizationId, eq(installments.id, b.id)))
+            .returning({ saleId: installments.saleId });
+        if (!row) return NextResponse.json({ error: 'Parcela não encontrada.' }, { status: 404 });
+        await recomputeReceived(caller, row.saleId!);
         return NextResponse.json({ ok: true });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -81,10 +93,13 @@ export async function DELETE(req: Request) {
         const id = new URL(req.url).searchParams.get('id');
         if (!id) return NextResponse.json({ error: 'ID não fornecido.' }, { status: 400 });
 
-        const [row] = await db.delete(installments).where(eq(installments.id, id)).returning({ saleId: installments.saleId });
-        if (row) await recomputeReceived(row.saleId!);
+        const [row] = await db.delete(installments)
+            .where(scopedTo(caller, installments.organizationId, eq(installments.id, id)))
+            .returning({ saleId: installments.saleId });
+        if (!row) return NextResponse.json({ error: 'Parcela não encontrada.' }, { status: 404 });
+        await recomputeReceived(caller, row.saleId!);
         return NextResponse.json({ ok: true });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }

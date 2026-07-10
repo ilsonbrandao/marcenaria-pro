@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { and, eq, asc } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { budgets, budgetEnvironments, budgetItems, profiles, sales } from '@/lib/db/schema';
 import { getCaller } from '@/lib/auth-helpers';
+import { scopedTo } from '@/lib/authz';
 import { snakeKeys, snakeRows } from '@/lib/case';
 import { recalcTotals } from '@/lib/budget-recalc';
 
@@ -43,7 +45,7 @@ export async function GET(req: Request, { params }: { params: { budgetId: string
             })),
         });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -55,11 +57,13 @@ export async function PUT(req: Request, { params }: { params: { budgetId: string
         }
 
         const body = await req.json();
+        // `saleId` não é atribuível pelo cliente: só o próprio handler o define
+        // ao aprovar o orçamento (abaixo).
         const map: Record<string, string> = {
             client_name: 'clientName', client_address: 'clientAddress', payment_type: 'paymentType',
             prazo_entry_percent: 'prazoEntryPercent', prazo_installments: 'prazoInstallments',
             avista_discount_percent: 'avistaDiscountPercent', avista_entry_percent: 'avistaEntryPercent',
-            observations: 'observations', status: 'status', sale_id: 'saleId',
+            observations: 'observations', status: 'status',
         };
         const numeric = new Set(['prazo_entry_percent', 'avista_discount_percent', 'avista_entry_percent']);
         const updates: Record<string, any> = { updatedAt: new Date().toISOString() };
@@ -70,9 +74,14 @@ export async function PUT(req: Request, { params }: { params: { budgetId: string
         if (body.status === 'approved') {
             const [existing] = await db
                 .select({ saleId: budgets.saleId, clientName: budgets.clientName, totalPrazo: budgets.totalPrazo })
-                .from(budgets).where(eq(budgets.id, params.budgetId)).limit(1);
+                .from(budgets)
+                .where(scopedTo(caller, budgets.organizationId, eq(budgets.id, params.budgetId)))
+                .limit(1);
+            if (!existing) {
+                return NextResponse.json({ error: 'Orçamento não encontrado.' }, { status: 404 });
+            }
 
-            if (existing && !existing.saleId) {
+            if (!existing.saleId) {
                 const [sale] = await db.insert(sales).values({
                     organizationId: caller.organizationId!,
                     clientName: existing.clientName,
@@ -84,7 +93,12 @@ export async function PUT(req: Request, { params }: { params: { budgetId: string
             }
         }
 
-        const [data] = await db.update(budgets).set(updates).where(eq(budgets.id, params.budgetId)).returning();
+        const [data] = await db.update(budgets).set(updates)
+            .where(scopedTo(caller, budgets.organizationId, eq(budgets.id, params.budgetId)))
+            .returning();
+        if (!data) {
+            return NextResponse.json({ error: 'Orçamento não encontrado.' }, { status: 404 });
+        }
 
         if (body.avista_discount_percent !== undefined) {
             await recalcTotals(params.budgetId);
@@ -94,7 +108,7 @@ export async function PUT(req: Request, { params }: { params: { budgetId: string
 
         return NextResponse.json(snakeKeys(data));
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -111,6 +125,6 @@ export async function DELETE(req: Request, { params }: { params: { budgetId: str
         await db.delete(budgets).where(cond);
         return NextResponse.json({ ok: true });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }

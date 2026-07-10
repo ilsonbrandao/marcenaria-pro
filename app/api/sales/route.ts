@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { and, eq, desc, sum } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { sales, architects, stockMovements, expenses } from '@/lib/db/schema';
@@ -48,7 +49,7 @@ export async function GET(req: Request) {
         const rows = await db.select().from(sales).where(scope(caller)).orderBy(desc(sales.createdAt));
         return NextResponse.json(rows.map(numify));
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -76,7 +77,7 @@ export async function POST(req: Request) {
         const [data] = await db.insert(sales).values(values as any).returning({ id: sales.id });
         return NextResponse.json({ id: data.id }, { status: 201 });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -113,7 +114,7 @@ export async function PATCH(req: Request) {
         }
         return NextResponse.json({ ok: true, ...extra });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -132,6 +133,6 @@ export async function DELETE(req: Request) {
         await db.delete(sales).where(cond);
         return NextResponse.json({ ok: true });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }

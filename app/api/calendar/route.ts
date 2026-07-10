@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { and, eq, gte, lte, or, asc } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { calendarEvents, profiles, sales } from '@/lib/db/schema';
@@ -45,7 +46,7 @@ export async function GET(req: Request) {
             sales: r.s_client_name ? { client_name: r.s_client_name } : null,
         })));
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -70,7 +71,7 @@ export async function POST(req: Request) {
         }).returning({ id: calendarEvents.id });
         return NextResponse.json({ id: data.id }, { status: 201 });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -94,7 +95,7 @@ export async function PUT(req: Request) {
             .where(and(eq(calendarEvents.id, b.id), eq(calendarEvents.organizationId, caller.organizationId!)));
         return NextResponse.json({ ok: true });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -109,6 +110,6 @@ export async function DELETE(req: Request) {
             .where(and(eq(calendarEvents.id, id), eq(calendarEvents.organizationId, caller.organizationId!)));
         return NextResponse.json({ ok: true });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }

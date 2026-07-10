@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { and, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { budgetItems, budgets } from '@/lib/db/schema';
 import { getCaller } from '@/lib/auth-helpers';
+import { ownsBudget } from '@/lib/authz';
 import { snakeKeys } from '@/lib/case';
 
 // Recalcula somando value_prazo e value_avista por item (sem desconto).
@@ -29,6 +31,10 @@ export async function PUT(req: Request, { params }: { params: { budgetId: string
             return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
         }
 
+        if (!(await ownsBudget(caller, params.budgetId))) {
+            return NextResponse.json({ error: 'Orçamento não encontrado.' }, { status: 404 });
+        }
+
         const body = await req.json();
         const map: Record<string, string> = {
             description: 'description', qty: 'qty', alt_cm: 'altCm', larg_cm: 'largCm', prof_cm: 'profCm',
@@ -47,7 +53,7 @@ export async function PUT(req: Request, { params }: { params: { budgetId: string
         await recalcTotals(params.budgetId);
         return NextResponse.json(snakeKeys(data));
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -58,12 +64,16 @@ export async function DELETE(req: Request, { params }: { params: { budgetId: str
             return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
         }
 
+        if (!(await ownsBudget(caller, params.budgetId))) {
+            return NextResponse.json({ error: 'Orçamento não encontrado.' }, { status: 404 });
+        }
+
         await db.delete(budgetItems)
             .where(and(eq(budgetItems.id, params.itemId), eq(budgetItems.budgetId, params.budgetId)));
 
         await recalcTotals(params.budgetId);
         return NextResponse.json({ ok: true });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }

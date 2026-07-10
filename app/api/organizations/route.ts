@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { eq, asc, count } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { organizations, profiles } from '@/lib/db/schema';
@@ -43,7 +44,7 @@ export async function GET(req: Request) {
 
         return NextResponse.json(snakeRows(rows).map((o) => ({ ...o, member_count: countMap.get(o.id) ?? 0 })));
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -59,7 +60,7 @@ export async function POST(req: Request) {
         const [data] = await db.insert(organizations).values(mapFields(b) as any).returning({ id: organizations.id });
         return NextResponse.json({ id: data.id }, { status: 201 });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -78,7 +79,7 @@ export async function PUT(req: Request) {
         await db.update(organizations).set(mapFields(b)).where(eq(organizations.id, b.id));
         return NextResponse.json({ ok: true });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -94,6 +95,6 @@ export async function DELETE(req: Request) {
         await db.delete(organizations).where(eq(organizations.id, id));
         return NextResponse.json({ ok: true });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }

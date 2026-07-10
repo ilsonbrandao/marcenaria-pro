@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { and, eq, asc } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { clients } from '@/lib/db/schema';
 import { getCaller } from '@/lib/auth-helpers';
+import { scopedTo } from '@/lib/authz';
 import { snakeRows } from '@/lib/case';
 
 const MANAGER = ['sysadmin', 'owner', 'office', 'seller'];
@@ -15,17 +17,27 @@ function mapFields(b: any) {
     return out;
 }
 
-export async function GET() {
+// Teto de linhas por resposta. Mantém o formato de array (o front espera isso),
+// mas impede que uma organização grande devolva a tabela inteira de uma vez.
+const MAX_LIMIT = 500;
+
+export async function GET(req: Request) {
     try {
         const caller = await getCaller();
         if (!caller || caller.role === 'carpenter') return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
 
-        const rows = caller.role === 'sysadmin'
-            ? await db.select().from(clients).orderBy(asc(clients.name))
-            : await db.select().from(clients).where(eq(clients.organizationId, caller.organizationId!)).orderBy(asc(clients.name));
+        const url = new URL(req.url);
+        const limit = Math.min(Number(url.searchParams.get('limit')) || MAX_LIMIT, MAX_LIMIT);
+        const offset = Math.max(Number(url.searchParams.get('offset')) || 0, 0);
+
+        const rows = await db.select().from(clients)
+            .where(scopedTo(caller, clients.organizationId))
+            .orderBy(asc(clients.name))
+            .limit(limit)
+            .offset(offset);
         return NextResponse.json(snakeRows(rows));
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -41,7 +53,7 @@ export async function POST(req: Request) {
         } as any).returning({ id: clients.id });
         return NextResponse.json({ id: data.id }, { status: 201 });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -58,7 +70,7 @@ export async function PUT(req: Request) {
         await db.update(clients).set(mapFields(b)).where(cond);
         return NextResponse.json({ ok: true });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -75,6 +87,6 @@ export async function DELETE(req: Request) {
         await db.delete(clients).where(cond);
         return NextResponse.json({ ok: true });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }

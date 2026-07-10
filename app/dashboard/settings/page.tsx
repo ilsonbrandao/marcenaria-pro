@@ -37,10 +37,8 @@ export default function SettingsPage() {
 
     const [defaultObs, setDefaultObs] = useState("");
 
-    const authHeader = async () => {
-        const tok = await AuthService.getAccessToken();
-        return { Authorization: `Bearer ${tok}` };
-    };
+    // A sessão vai por cookie httpOnly (Auth.js); não há header a enviar.
+    const authHeader = async (): Promise<Record<string, string>> => ({});
 
     useEffect(() => {
         const fetchOrg = async () => {

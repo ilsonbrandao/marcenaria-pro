@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { eq, asc } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { projectMessages, profiles } from '@/lib/db/schema';
 import { getCaller } from '@/lib/auth-helpers';
+import { scopedTo, ownsSale } from '@/lib/authz';
 import { snakeKeys } from '@/lib/case';
 
 function reshape(row: any) {
@@ -34,12 +36,12 @@ export async function GET(req: Request, { params }: { params: { saleId: string }
         const rows = await db.select(baseSelect)
             .from(projectMessages)
             .leftJoin(profiles, eq(profiles.id, projectMessages.profileId))
-            .where(eq(projectMessages.saleId, params.saleId))
+            .where(scopedTo(caller, projectMessages.organizationId, eq(projectMessages.saleId, params.saleId)))
             .orderBy(asc(projectMessages.createdAt));
 
         return NextResponse.json(rows.map(reshape));
     } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return apiError(error);
     }
 }
 
@@ -50,6 +52,10 @@ export async function POST(req: Request, { params }: { params: { saleId: string 
 
         const { message } = await req.json();
         if (!message?.trim()) return NextResponse.json({ error: 'Mensagem vazia.' }, { status: 400 });
+
+        if (!(await ownsSale(caller, params.saleId))) {
+            return NextResponse.json({ error: 'Não encontrado.' }, { status: 404 });
+        }
 
         const [inserted] = await db.insert(projectMessages).values({
             organizationId: caller.organizationId!,
@@ -66,6 +72,6 @@ export async function POST(req: Request, { params }: { params: { saleId: string 
 
         return NextResponse.json(reshape(row));
     } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return apiError(error);
     }
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { and, eq, asc } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { suppliers } from '@/lib/db/schema';
@@ -31,7 +32,7 @@ export async function GET() {
 
         return NextResponse.json(snakeRows(rows));
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -50,7 +51,7 @@ export async function POST(req: Request) {
         } as any).returning({ id: suppliers.id });
         return NextResponse.json({ id: data.id }, { status: 201 });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -69,6 +70,6 @@ export async function PUT(req: Request) {
         await db.update(suppliers).set(mapFields(b)).where(cond);
         return NextResponse.json({ ok: true });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
