@@ -4,12 +4,17 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { budgets, budgetItems } from '@/lib/db/schema';
 import { recalcTotals } from '@/lib/budget-recalc';
+import { isUuid } from '@/lib/authz';
 import { rateLimit, clientIp, tooManyRequests } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
 export async function PATCH(req: Request, { params }: { params: { token: string } }) {
     try {
+        if (!isUuid(params.token)) {
+            return NextResponse.json({ error: 'Orçamento não encontrado.' }, { status: 404 });
+        }
+
         // Endpoint público: limita por token e por IP antes de tocar o banco.
         const perToken = rateLimit(`pubbudget:${params.token}`, 30, 10 * 60 * 1000);
         const perIp = rateLimit(`pubbudget:ip:${clientIp(req)}`, 60, 10 * 60 * 1000);

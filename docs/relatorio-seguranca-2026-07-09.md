@@ -297,6 +297,12 @@ Depois **rotacione** `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET` e o **We
 > **Lição da varredura:** a primeira checagem de segredos procurava `AUTH_SECRET=`, `POSTGRES_PASSWORD=`, `sbp_` e JWTs, mas **não** cobria uma URL `postgres://usuario:senha@host`. O padrão foi adicionado à varredura:
 > `postgres(ql)?://[^ ]*:[^ ]*@ | sbp_[A-Za-z0-9]{20,} | eyJ[A-Za-z0-9_-]{30,} | AKIA[0-9A-Z]{16} | -----BEGIN .* PRIVATE KEY`
 
+### ✅ Deploy em produção — concluído em 2026-07-09
+- [x] Backup de prod antes de tudo (`backups/fresa_prod_pre_migration_*.dump`, validado)
+- [x] `migrations/0001_token_version_e_setup_tokens.sql` aplicada em prod (aditiva, idempotente)
+- [x] Merge na `main` + rebuild do Coolify (`c1b7e43`, status `finished`)
+- [x] Smoke test em produção, incluindo o IDOR cross-tenant (§F.10)
+
 ### ⏳ Pendente — só você pode fazer (painéis/infra)
 - [ ] **Rotacionar o Webhook Secret do Coolify** (achado 4). Ele segue vivo e permite disparar deploy em produção — independe do Supabase. Trate como comprometido: esteve em arquivo não-ignorado num repo público.
 - [ ] **Revogar o token de API do Supabase (`sbp_…`)** que estava versionado no `.claude/settings.local.json` (duas ocorrências, ambas removidas do arquivo). Ele **permanece no histórico do Git** — commits `c02886b` e `580e604`, num repo público — e um PAT desses dá acesso à **conta** Supabase, não só ao projeto abandonado. Apagar o projeto Supabase não revoga o token: revogue em https://supabase.com/dashboard/account/tokens.
@@ -437,7 +443,37 @@ A app conecta como `marcenaria_user` — `SUPERUSER`, `rolbypassrls = true`. Lig
 não protegeria nada e daria falsa sensação de segurança. Procedimento completo, com os dois
 pré-requisitos, em `docs/rls-multitenant.md`.
 
-### F.10 — Headers, build e infraestrutura local
+### F.10 — Validação em PRODUÇÃO (após o deploy do commit `c1b7e43`)
+
+Sequência executada: backup (`pg_dump -Fc`, 118 KB, 22 tabelas, validado com `pg_restore -l`)
+→ migration aditiva → verificação com a app antiga ainda no ar → merge/push → rebuild do
+Coolify (`finished`) → smoke test.
+
+| Verificação | Resultado |
+|---|---|
+| `GET /api/health` | 200 `{"status":"ok"}` |
+| Headers CSP / X-Frame-Options / nosniff / Referrer-Policy / Permissions-Policy | **presentes** |
+| HSTS | **ausente**, como esperado (app ainda em HTTP) |
+| `/dashboard` sem sessão | 307 → `/login` |
+| Login real | **sessão criada** |
+| `GET /api/me` (lê `token_version` em prod) | 200 |
+| `/api/invite` com `role: sysadmin` (chamador `owner`) | **403** |
+| `/api/invite` legítimo | devolve `setup_url`, **sem `temp_password`** |
+| **IDOR:** `PATCH /api/sales/<venda de outra org>/notes` | **404** |
+| **IDOR:** `POST .../advance` | **404** |
+| **IDOR:** `GET .../files` | `[]` |
+| Estado da venda alheia no banco | **inalterado** (`notes` e `status` originais) |
+| Erro de rota pública | `{"error":"Erro interno no servidor.","requestId":"…"}` — sem `e.message` |
+
+Usuários de teste removidos ao final: prod voltou a **13 usuários / 13 perfis**, 0 tokens pendentes.
+
+> **Um falso alarme, causado pelo meu próprio teste:** o primeiro login em produção falhou com
+> `CredentialsSignin`. A causa não era a aplicação — eu havia inserido o hash bcrypt via
+> `ssh "... psql -c \"... '$2b$12$...'\""`, e o **shell remoto expandiu `$2b`, `$12`** como
+> variáveis, gravando um hash de 5 caracteres. Os hashes dos usuários reais estavam íntegros
+> (60 chars). Corrigido passando o SQL por **stdin**, que nenhum shell reinterpreta.
+
+### F.11 — Headers, build e infraestrutura local
 
 - CSP, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy` e `Permissions-Policy` presentes em `GET /api/health`.
 - `npx tsc --noEmit` limpo; `npm run build` compila e gera as 51 páginas.

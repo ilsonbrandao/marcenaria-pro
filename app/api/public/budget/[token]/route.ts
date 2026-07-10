@@ -4,6 +4,7 @@ import { unstable_noStore as noStore } from 'next/cache';
 import { eq, asc } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { budgets, budgetEnvironments, budgetItems, organizations, profiles } from '@/lib/db/schema';
+import { isUuid } from '@/lib/authz';
 import { snakeKeys, snakeRows } from '@/lib/case';
 
 export const dynamic = 'force-dynamic';
@@ -11,6 +12,10 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: Request, { params }: { params: { token: string } }) {
     noStore();
     try {
+        if (!isUuid(params.token)) {
+            return NextResponse.json({ error: 'Orçamento não encontrado.' }, { status: 404 });
+        }
+
         const [budget] = await db
             .select({
                 id: budgets.id,

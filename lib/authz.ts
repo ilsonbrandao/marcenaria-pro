@@ -44,3 +44,11 @@ export async function ownsInventoryItem(caller: Caller, inventoryId: string): Pr
 // 404 em vez de 403: não confirma a existência do recurso para quem não é dono.
 export const notFound = () =>
     Response.json({ error: 'Não encontrado.' }, { status: 404 });
+
+// Comparar uma string arbitrária com uma coluna `uuid` faz o Postgres lançar
+// `invalid input syntax for type uuid` — um 500 onde o certo é 404.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: string): boolean {
+    return UUID_RE.test(value);
+}
