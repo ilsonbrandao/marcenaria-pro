@@ -29,8 +29,10 @@ const securityHeaders = [
     { key: 'X-Frame-Options', value: 'DENY' },
     { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
     { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=(), usb=()' },
-    // Só habilitar depois que a app estiver servida em HTTPS:
-    // { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+    // HTTPS ativo desde 2026-07-09 (Let's Encrypt via Traefik/Coolify).
+    // Sem `preload`: a lista de preload é praticamente irreversível e o domínio
+    // ainda é provisório (*.sslip.io).
+    { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
 ];
 
 const nextConfig = {
