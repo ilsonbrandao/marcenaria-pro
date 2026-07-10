@@ -291,7 +291,11 @@ Depois **rotacione** `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET` e o **We
 - [x] **Gate de role por prefixo** no callback `authorized` — achado 25
 - [x] **Teto de 500 linhas** na listagem de clientes — achado 35
 - [x] **`Authorization: Bearer null` removido** e `getAccessToken()` deletado — achado 36
-- [x] **Supabase removido** (`supabase/` apagado) e **token de API `sbp_…` retirado** do `.claude/settings.local.json`, que é versionado
+- [x] **Supabase removido** (`supabase/`, migrations e os scripts pontuais de migração — não referenciados em `package.json` nem importados por nenhum código)
+- [x] **`.claude/settings.local.json` deixou de ser versionado** e foi para o `.gitignore`. É config por máquina e acumulava comandos permitidos com credenciais dentro: o **token de API do Supabase (`sbp_…`)** e a **senha do banco de produção** embutida numa URL `postgres://`. A senha de prod **nunca chegou ao remoto**; o token do Supabase já estava no histórico (ver pendências).
+
+> **Lição da varredura:** a primeira checagem de segredos procurava `AUTH_SECRET=`, `POSTGRES_PASSWORD=`, `sbp_` e JWTs, mas **não** cobria uma URL `postgres://usuario:senha@host`. O padrão foi adicionado à varredura:
+> `postgres(ql)?://[^ ]*:[^ ]*@ | sbp_[A-Za-z0-9]{20,} | eyJ[A-Za-z0-9_-]{30,} | AKIA[0-9A-Z]{16} | -----BEGIN .* PRIVATE KEY`
 
 ### ⏳ Pendente — só você pode fazer (painéis/infra)
 - [ ] **Rotacionar o Webhook Secret do Coolify** (achado 4). Ele segue vivo e permite disparar deploy em produção — independe do Supabase. Trate como comprometido: esteve em arquivo não-ignorado num repo público.

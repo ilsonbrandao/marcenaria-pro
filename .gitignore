@@ -36,6 +36,8 @@ docs/marcenaria-pro-deploy-coolify.md
 backups/
 *.dump
 *.sql
+# migrations são código, não dump de banco
+!migrations/*.sql
 
 # vercel
 .vercel
