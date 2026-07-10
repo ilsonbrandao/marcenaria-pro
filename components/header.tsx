@@ -51,6 +51,7 @@ export function Header() {
     const [orgs, setOrgs] = useState<Organization[]>([]);
     const [loadingOrgs, setLoadingOrgs] = useState(false);
     const [changePwdOpen, setChangePwdOpen] = useState(false);
+    const [currentPassword, setCurrentPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
     const [savingPwd, setSavingPwd] = useState(false);
@@ -81,15 +82,20 @@ export function Header() {
     };
 
     const handleChangePwd = async () => {
-        if (newPassword.length < 6) { toast.error("Senha muito curta (mínimo 6 caracteres)."); return; }
+        if (!currentPassword) { toast.error("Informe a senha atual."); return; }
+        if (newPassword.length < 10) { toast.error("Senha muito curta (mínimo 10 caracteres)."); return; }
         if (newPassword !== confirmPassword) { toast.error("As senhas não conferem."); return; }
         setSavingPwd(true);
         try {
-            await AuthService.changePassword(newPassword);
-            toast.success("Senha alterada com sucesso!");
+            await AuthService.changePassword(currentPassword, newPassword);
             setChangePwdOpen(false);
+            setCurrentPassword("");
             setNewPassword("");
             setConfirmPassword("");
+            // A troca invalida todas as sessões, inclusive esta.
+            toast.success("Senha alterada. Entre novamente com a nova senha.");
+            await AuthService.logout();
+            router.push("/login");
         } catch (err: any) {
             toast.error(err.message || "Erro ao alterar senha.");
         } finally {
@@ -311,12 +317,21 @@ export function Header() {
                     </DialogHeader>
                     <div className="space-y-3 py-2">
                         <div className="space-y-1">
+                            <Label>Senha Atual</Label>
+                            <Input
+                                type="password"
+                                value={currentPassword}
+                                onChange={e => setCurrentPassword(e.target.value)}
+                                placeholder="Sua senha atual"
+                            />
+                        </div>
+                        <div className="space-y-1">
                             <Label>Nova Senha</Label>
                             <Input
                                 type="password"
                                 value={newPassword}
                                 onChange={e => setNewPassword(e.target.value)}
-                                placeholder="Mínimo 6 caracteres"
+                                placeholder="Mínimo 10 caracteres"
                             />
                         </div>
                         <div className="space-y-1">

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { and, eq, asc } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { kanbanStages } from '@/lib/db/schema';
@@ -17,7 +18,7 @@ export async function GET() {
             : await db.select().from(kanbanStages).where(eq(kanbanStages.organizationId, caller.organizationId!)).orderBy(asc(kanbanStages.position));
         return NextResponse.json(snakeRows(rows));
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -38,7 +39,7 @@ export async function POST(req: Request) {
         }).returning({ id: kanbanStages.id });
         return NextResponse.json({ id: data.id }, { status: 201 });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -61,7 +62,7 @@ export async function PUT(req: Request) {
         await db.update(kanbanStages).set(updates).where(cond);
         return NextResponse.json({ ok: true });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -81,7 +82,7 @@ export async function PATCH(req: Request) {
         }
         return NextResponse.json({ ok: true });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -98,6 +99,6 @@ export async function DELETE(req: Request) {
         await db.delete(kanbanStages).where(cond);
         return NextResponse.json({ ok: true });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }

@@ -118,16 +118,6 @@ export default function PublicBudgetPage() {
         }
     };
 
-    const handlePaymentChange = async (updates: any) => {
-        if (!budget) return;
-        setBudget(prev => prev ? { ...prev, ...updates } : null);
-        await fetch(`/api/public/budget/${token}/update`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'update_payment', ...updates }),
-        });
-    };
-
     const reloadTotals = useCallback(async (update?: { total_prazo: number; total_avista: number; environments?: any[] }) => {
         if (update) {
             // Totais calculados localmente — aplica direto, sem fetch
@@ -397,7 +387,6 @@ export default function PublicBudgetPage() {
                     </div>
                     <BudgetPaymentSimulator
                         budget={budget}
-                        onChange={budget.status === 'approved' ? undefined : handlePaymentChange}
                         readOnly={budget.status === 'approved'}
                         hideInputs={true}
                         selectedPayment={selectedPayment}

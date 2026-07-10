@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { organizations } from '@/lib/db/schema';
@@ -23,7 +24,7 @@ export async function POST(req: Request) {
     try {
         await uploadObject(key, bytes, file.type, true);
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 
     const logo_url = `${publicUrl(key)}?t=${Date.now()}`;

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { unstable_noStore as noStore } from 'next/cache';
 import { eq, asc } from 'drizzle-orm';
 import { db } from '@/lib/db';
@@ -101,6 +102,6 @@ export async function GET(req: Request, { params }: { params: { token: string } 
             },
         });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }

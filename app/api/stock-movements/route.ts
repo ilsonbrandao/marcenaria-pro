@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { and, eq, desc } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { stockMovements, inventory } from '@/lib/db/schema';
 import { getCaller } from '@/lib/auth-helpers';
+import { scopedTo, ownsSale } from '@/lib/authz';
 
 export async function GET(req: Request) {
     try {
@@ -21,7 +23,7 @@ export async function GET(req: Request) {
             })
             .from(stockMovements)
             .leftJoin(inventory, eq(inventory.id, stockMovements.inventoryId))
-            .where(eq(stockMovements.saleId, saleId))
+            .where(scopedTo(caller, stockMovements.organizationId, eq(stockMovements.saleId, saleId)))
             .orderBy(desc(stockMovements.createdAt));
 
         return NextResponse.json(rows.map((r) => ({
@@ -33,7 +35,7 @@ export async function GET(req: Request) {
             } : null,
         })));
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -46,7 +48,13 @@ export async function POST(req: Request) {
         const qty = Number(b.quantity) || 0;
         if (qty <= 0) return NextResponse.json({ error: 'Quantidade inválida.' }, { status: 400 });
 
-        const [item] = await db.select({ quantity: inventory.quantity }).from(inventory).where(eq(inventory.id, b.inventory_id)).limit(1);
+        if (b.sale_id && !(await ownsSale(caller, b.sale_id))) {
+            return NextResponse.json({ error: 'Venda não encontrada.' }, { status: 404 });
+        }
+
+        const [item] = await db.select({ quantity: inventory.quantity }).from(inventory)
+            .where(scopedTo(caller, inventory.organizationId, eq(inventory.id, b.inventory_id)))
+            .limit(1);
         if (!item) return NextResponse.json({ error: 'Item não encontrado.' }, { status: 404 });
         if (Number(item.quantity) < qty) {
             return NextResponse.json({ error: `Estoque insuficiente. Disponível: ${Number(item.quantity)}` }, { status: 400 });
@@ -60,10 +68,11 @@ export async function POST(req: Request) {
             quantity: String(qty),
             notes: b.notes || null,
         });
-        await db.update(inventory).set({ quantity: String(Number(item.quantity) - qty) }).where(eq(inventory.id, b.inventory_id));
+        await db.update(inventory).set({ quantity: String(Number(item.quantity) - qty) })
+            .where(scopedTo(caller, inventory.organizationId, eq(inventory.id, b.inventory_id)));
 
         return NextResponse.json({ ok: true }, { status: 201 });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }

@@ -12,6 +12,21 @@ export const users = pgTable("users", {
 	unique("users_email_key").on(table.email),
 ]);
 
+// Token de uso único para o novo usuário definir a própria senha (convite) ou
+// redefini-la. Guardamos só o hash: quem lê o banco não consegue usar o link.
+export const passwordSetupTokens = pgTable("password_setup_tokens", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	userId: uuid("user_id").notNull(),
+	tokenHash: text("token_hash").notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+	usedAt: timestamp("used_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).default(sql`timezone('utc'::text, now())`).notNull(),
+}, (table) => [
+	index("idx_password_setup_tokens_user").using("btree", table.userId.asc().nullsLast()),
+	foreignKey({ columns: [table.userId], foreignColumns: [users.id], name: "password_setup_tokens_user_id_fkey" }).onDelete("cascade"),
+	unique("password_setup_tokens_token_hash_key").on(table.tokenHash),
+]);
+
 export const sales = pgTable("sales", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	organizationId: uuid("organization_id"),
@@ -419,6 +434,8 @@ export const profiles = pgTable("profiles", {
 	isActive: boolean("is_active").default(true),
 	avatarUrl: text("avatar_url"),
 	colorTheme: text("color_theme").default('blue'),
+	// Incrementado ao trocar a senha: invalida todos os JWTs já emitidos.
+	tokenVersion: integer("token_version").default(0).notNull(),
 }, (table) => [
 	foreignKey({ columns: [table.id], foreignColumns: [users.id], name: "profiles_id_fkey" }).onDelete("cascade"),
 	foreignKey({ columns: [table.organizationId], foreignColumns: [organizations.id], name: "profiles_organization_id_fkey" }).onDelete("cascade"),

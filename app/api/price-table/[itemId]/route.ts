@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { priceTableItems } from '@/lib/db/schema';
 import { getCaller } from '@/lib/auth-helpers';
+import { scopedTo } from '@/lib/authz';
 import { snakeKeys } from '@/lib/case';
 
 export async function PUT(req: Request, { params }: { params: { itemId: string } }) {
@@ -21,11 +23,13 @@ export async function PUT(req: Request, { params }: { params: { itemId: string }
         if (body.position !== undefined) updates.position = body.position;
 
         const [data] = await db.update(priceTableItems).set(updates)
-            .where(eq(priceTableItems.id, params.itemId)).returning();
+            .where(scopedTo(caller, priceTableItems.organizationId, eq(priceTableItems.id, params.itemId)))
+            .returning();
+        if (!data) return NextResponse.json({ error: 'Item não encontrado.' }, { status: 404 });
 
         return NextResponse.json(snakeKeys(data));
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -36,9 +40,10 @@ export async function DELETE(req: Request, { params }: { params: { itemId: strin
             return NextResponse.json({ error: 'Acesso negado.' }, { status: 403 });
         }
 
-        await db.delete(priceTableItems).where(eq(priceTableItems.id, params.itemId));
+        await db.delete(priceTableItems)
+            .where(scopedTo(caller, priceTableItems.organizationId, eq(priceTableItems.id, params.itemId)));
         return NextResponse.json({ ok: true });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }

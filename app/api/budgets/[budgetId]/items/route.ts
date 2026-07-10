@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
-import { eq, count } from 'drizzle-orm';
+import { apiError } from '@/lib/api-error';
+import { and, eq, count } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { budgetItems } from '@/lib/db/schema';
+import { budgetItems, budgetEnvironments } from '@/lib/db/schema';
 import { getCaller } from '@/lib/auth-helpers';
+import { ownsBudget } from '@/lib/authz';
 import { snakeKeys } from '@/lib/case';
 import { recalcTotals } from '@/lib/budget-recalc';
 
@@ -21,6 +23,18 @@ export async function POST(req: Request, { params }: { params: { budgetId: strin
 
         if (!environment_id || !description?.trim()) {
             return NextResponse.json({ error: 'Ambiente e descrição são obrigatórios.' }, { status: 400 });
+        }
+
+        if (!(await ownsBudget(caller, params.budgetId))) {
+            return NextResponse.json({ error: 'Orçamento não encontrado.' }, { status: 404 });
+        }
+
+        // O ambiente precisa pertencer a este orçamento (vem do body).
+        const [env] = await db.select({ id: budgetEnvironments.id }).from(budgetEnvironments)
+            .where(and(eq(budgetEnvironments.id, environment_id), eq(budgetEnvironments.budgetId, params.budgetId)))
+            .limit(1);
+        if (!env) {
+            return NextResponse.json({ error: 'Ambiente inválido para este orçamento.' }, { status: 400 });
         }
 
         const [{ value: position }] = await db.select({ value: count() })
@@ -43,6 +57,6 @@ export async function POST(req: Request, { params }: { params: { budgetId: strin
         await recalcTotals(params.budgetId);
         return NextResponse.json(snakeKeys(data), { status: 201 });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { and, eq, gte, lte, desc } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { expenses, sales } from '@/lib/db/schema';
@@ -51,7 +52,7 @@ export async function GET(req: Request) {
             })),
         });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -75,7 +76,7 @@ export async function POST(req: Request) {
         });
         return NextResponse.json({ ok: true }, { status: 201 });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -91,6 +92,6 @@ export async function DELETE(req: Request) {
         await db.delete(expenses).where(and(eq(expenses.id, id), eq(expenses.organizationId, caller.organizationId!)));
         return NextResponse.json({ ok: true });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }

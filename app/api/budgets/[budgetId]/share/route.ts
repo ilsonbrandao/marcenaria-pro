@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { budgets } from '@/lib/db/schema';
 import { getCaller } from '@/lib/auth-helpers';
+import { scopedTo } from '@/lib/authz';
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
@@ -14,7 +16,9 @@ export async function GET(req: Request, { params }: { params: { budgetId: string
         }
 
         const [data] = await db.select({ publicToken: budgets.publicToken })
-            .from(budgets).where(eq(budgets.id, params.budgetId)).limit(1);
+            .from(budgets)
+            .where(scopedTo(caller, budgets.organizationId, eq(budgets.id, params.budgetId)))
+            .limit(1);
         if (!data) return NextResponse.json({ error: 'Orçamento não encontrado.' }, { status: 404 });
 
         return NextResponse.json({
@@ -22,7 +26,7 @@ export async function GET(req: Request, { params }: { params: { budgetId: string
             public_url: `${appUrl}/orcamento/${data.publicToken}`,
         });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }
 
@@ -34,13 +38,15 @@ export async function POST(req: Request, { params }: { params: { budgetId: strin
         }
 
         const [data] = await db.update(budgets).set({ publicToken: crypto.randomUUID() })
-            .where(eq(budgets.id, params.budgetId)).returning({ publicToken: budgets.publicToken });
+            .where(scopedTo(caller, budgets.organizationId, eq(budgets.id, params.budgetId)))
+            .returning({ publicToken: budgets.publicToken });
+        if (!data) return NextResponse.json({ error: 'Orçamento não encontrado.' }, { status: 404 });
 
         return NextResponse.json({
             public_token: data.publicToken,
             public_url: `${appUrl}/orcamento/${data.publicToken}`,
         });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }

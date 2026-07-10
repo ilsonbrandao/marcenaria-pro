@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { and, eq, desc } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { budgets, sales } from '@/lib/db/schema';
@@ -34,6 +35,6 @@ export async function GET(req: Request, { params }: { params: { clientId: string
             sales: saleRows.map((s) => ({ ...s, total_value: s.total_value === null ? null : Number(s.total_value) })),
         });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return apiError(e);
     }
 }

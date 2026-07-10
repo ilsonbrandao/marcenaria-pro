@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-error';
 import { db } from '@/lib/db';
 import { expenses } from '@/lib/db/schema';
 import { getCaller } from '@/lib/auth-helpers';
+import { ownsSale } from '@/lib/authz';
 
 export async function POST(req: Request, { params }: { params: { saleId: string } }) {
     try {
@@ -15,6 +17,10 @@ export async function POST(req: Request, { params }: { params: { saleId: string 
             return NextResponse.json({ error: 'Mensagem não pode ser vazia.' }, { status: 400 });
         }
 
+        if (!(await ownsSale(caller, params.saleId))) {
+            return NextResponse.json({ error: 'Não encontrado.' }, { status: 404 });
+        }
+
         await db.insert(expenses).values({
             organizationId: caller.organizationId!,
             saleId: params.saleId,
@@ -25,6 +31,6 @@ export async function POST(req: Request, { params }: { params: { saleId: string 
 
         return NextResponse.json({ message: 'Relato registrado com sucesso.' });
     } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return apiError(error);
     }
 }
